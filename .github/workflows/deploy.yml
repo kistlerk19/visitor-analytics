@@ -23,6 +23,11 @@ jobs:
         with:
           terraform_version: 1.5.7
           
+      - name: Terraform Format
+        run: |
+          cd $TF_ROOT
+          terraform fmt
+          
       - name: Terraform Format Check
         run: |
           cd $TF_ROOT
@@ -41,6 +46,7 @@ jobs:
   build:
     name: Build and Push Docker Image
     runs-on: ubuntu-latest
+    needs: validate
     if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'
     steps:
       - uses: actions/checkout@v4
@@ -74,7 +80,7 @@ jobs:
   deploy:
     name: Deploy Infrastructure
     runs-on: ubuntu-latest
-    needs: build
+    needs: [validate, build]
     if: github.ref == 'refs/heads/main'
     steps:
       - uses: actions/checkout@v4
@@ -134,7 +140,7 @@ jobs:
   test:
     name: Test Deployment
     runs-on: ubuntu-latest
-    needs: deploy
+    needs: [validate, deploy]
     if: github.ref == 'refs/heads/main'
     steps:
       - uses: actions/checkout@v4
@@ -200,7 +206,7 @@ jobs:
   enable-dr:
     name: Enable Disaster Recovery
     runs-on: ubuntu-latest
-    needs: test
+    needs: [validate, test]
     if: github.ref == 'refs/heads/main' && vars.ENABLE_DR == 'true'
     steps:
       - uses: actions/checkout@v4

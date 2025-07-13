@@ -7,8 +7,8 @@ module "dr_networking" {
     aws = aws.dr
   }
 
-  project_name          = local.project_name
-  availability_zones    = slice(data.aws_availability_zones.dr.names, 0, 2)
+  project_name         = local.project_name
+  availability_zones   = slice(data.aws_availability_zones.dr.names, 0, 2)
   vpc_cidr             = "10.1.0.0/16"
   public_subnet_cidrs  = ["10.1.1.0/24", "10.1.2.0/24"]
   private_subnet_cidrs = ["10.1.3.0/24", "10.1.4.0/24"]
@@ -62,7 +62,7 @@ module "dr_ecs" {
     aws = aws.dr
   }
 
-  project_name           = local.project_name
+  project_name          = local.project_name
   vpc_id                = module.dr_networking[0].vpc_id
   public_subnet_ids     = module.dr_networking[0].public_subnet_ids
   private_subnet_ids    = module.dr_networking[0].private_subnet_ids
@@ -74,6 +74,6 @@ module "dr_ecs" {
   db_password           = module.primary_secrets.db_password
   secret_arn            = var.enable_dr ? module.primary_secrets.dr_secret_arn : module.primary_secrets.secret_arn
   aws_region            = var.dr_region
-  desired_count         = 0  # Pilot light - scaled to 0
+  desired_count         = 0 # Pilot light - scaled to 0
   tags                  = local.common_tags
 }

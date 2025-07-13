@@ -17,8 +17,8 @@ module "primary_networking" {
     aws = aws.primary
   }
 
-  project_name          = local.project_name
-  availability_zones    = slice(data.aws_availability_zones.primary.names, 0, 2)
+  project_name         = local.project_name
+  availability_zones   = slice(data.aws_availability_zones.primary.names, 0, 2)
   vpc_cidr             = "11.0.0.0/16"
   public_subnet_cidrs  = ["11.0.1.0/24", "11.0.2.0/24"]
   private_subnet_cidrs = ["11.0.3.0/24", "11.0.4.0/24"]
@@ -68,9 +68,9 @@ module "primary_rds" {
     aws.dr = aws.dr
   }
 
-  project_name              = local.project_name
-  private_subnet_ids        = module.primary_networking.private_subnet_ids
-  rds_security_group_id     = module.primary_security.rds_security_group_id
+  project_name             = local.project_name
+  private_subnet_ids       = module.primary_networking.private_subnet_ids
+  rds_security_group_id    = module.primary_security.rds_security_group_id
   db_password              = module.primary_secrets.db_password
   enable_dr                = var.enable_dr
   dr_subnet_group_name     = var.enable_dr ? aws_db_subnet_group.dr[0].name : ""
@@ -85,7 +85,7 @@ module "primary_ecs" {
     aws = aws.primary
   }
 
-  project_name           = local.project_name
+  project_name          = local.project_name
   vpc_id                = module.primary_networking.vpc_id
   public_subnet_ids     = module.primary_networking.public_subnet_ids
   private_subnet_ids    = module.primary_networking.private_subnet_ids
