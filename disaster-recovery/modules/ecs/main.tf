@@ -113,7 +113,7 @@ resource "aws_ecs_task_definition" "app" {
         },
         {
           name  = "DB_USER"
-          value = "admin"
+          value = "root"
         },
         {
           name  = "DB_PASSWORD"
@@ -161,7 +161,7 @@ resource "aws_lb_target_group" "app" {
     healthy_threshold   = 2
     interval            = 30
     matcher             = "200"
-    path                = "/health.php"
+    path                = "/health-simple.php"
     port                = "traffic-port"
     protocol            = "HTTP"
     timeout             = 5

@@ -234,7 +234,7 @@ jobs:
           echo "🔍 Checking ALB target health..."
           aws elbv2 describe-target-health --target-group-arn $(aws elbv2 describe-target-groups --names lamp-visitor-analytics --query 'TargetGroups[0].TargetGroupArn' --output text) || true
           echo "🔍 Testing health endpoint..."
-          curl -v http://${{ steps.get-alb.outputs.alb_dns }}/health.php || {
+          curl -v http://${{ steps.get-alb.outputs.alb_dns }}/health-simple.php || {
             echo "Health check failed - debugging..."
             echo "📋 ECS Task Status:"
             aws ecs describe-tasks --cluster lamp-visitor-analytics --tasks $(aws ecs list-tasks --cluster lamp-visitor-analytics --service-name lamp-visitor-analytics --query 'taskArns[0]' --output text) || true
