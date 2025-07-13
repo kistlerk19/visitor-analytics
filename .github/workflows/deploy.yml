@@ -240,12 +240,18 @@ jobs:
       - name: Wait for deployment
         run: |
           echo "⏳ Waiting for deployment to stabilize..."
-          echo "🔍 Checking ECS task health..."
-          aws ecs describe-services --cluster lamp-visitor-analytics --services lamp-visitor-analytics
-          echo "📋 Checking task definitions..."
-          aws ecs list-tasks --cluster lamp-visitor-analytics --service-name lamp-visitor-analytics
-          echo "⏳ Waiting 3 minutes for tasks to start..."
-          sleep 180
+          echo "🔍 Waiting for ECS service to be stable..."
+          aws ecs wait services-stable --cluster lamp-visitor-analytics --services lamp-visitor-analytics --cli-read-timeout 600 || {
+            echo "Service failed to stabilize, checking status..."
+            aws ecs describe-services --cluster lamp-visitor-analytics --services lamp-visitor-analytics
+            aws ecs list-tasks --cluster lamp-visitor-analytics --service-name lamp-visitor-analytics
+            TASK_ARN=$(aws ecs list-tasks --cluster lamp-visitor-analytics --service-name lamp-visitor-analytics --query 'taskArns[0]' --output text)
+            if [ "$TASK_ARN" != "None" ] && [ -n "$TASK_ARN" ]; then
+              aws ecs describe-tasks --cluster lamp-visitor-analytics --tasks $TASK_ARN
+            fi
+            exit 1
+          }
+          echo "✅ ECS service is stable"
           
       - name: Health Check Test
         run: |
