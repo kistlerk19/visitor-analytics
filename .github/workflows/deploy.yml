@@ -203,6 +203,26 @@ jobs:
         id: get-alb
         run: |
           cd $TF_ROOT
+          # Recreate backend configuration
+          cat > backend.tf << EOF
+          terraform {
+            backend "s3" {
+              bucket = "lamp-visitor-analytics-terraform-state-${{ secrets.AWS_ACCOUNT_ID }}"
+              key    = "terraform.tfstate"
+              region = "${{ env.AWS_DEFAULT_REGION }}"
+            }
+          }
+          EOF
+          # Recreate terraform.tfvars
+          cat > terraform.tfvars << EOF
+          primary_region = "${{ env.AWS_DEFAULT_REGION }}"
+          dr_region = "eu-central-1"
+          environment = "prod"
+          notification_email = "${{ secrets.NOTIFICATION_EMAIL }}"
+          aws_account_id = "${{ secrets.AWS_ACCOUNT_ID }}"
+          enable_dr = ${{ env.ENABLE_DR }}
+          image_tag = "${{ github.sha }}"
+          EOF
           terraform init
           ALB_DNS=$(terraform output -raw primary_alb_dns 2>/dev/null || echo "")
           if [ -z "$ALB_DNS" ]; then
