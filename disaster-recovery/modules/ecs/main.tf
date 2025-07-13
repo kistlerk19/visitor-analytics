@@ -102,12 +102,6 @@ resource "aws_ecs_task_definition" "app" {
           protocol      = "tcp"
         }
       ]
-      secrets = [
-        {
-          name      = "DB_CREDENTIALS"
-          valueFrom = var.secret_arn
-        }
-      ]
       environment = [
         {
           name  = "DB_HOST"
@@ -116,6 +110,14 @@ resource "aws_ecs_task_definition" "app" {
         {
           name  = "DB_NAME"
           value = var.db_name
+        },
+        {
+          name  = "DB_USER"
+          value = "admin"
+        },
+        {
+          name  = "DB_PASSWORD"
+          value = var.db_password
         }
       ]
       logConfiguration = {
