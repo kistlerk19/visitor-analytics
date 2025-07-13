@@ -1,0 +1,14 @@
+# Terraform
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+.terraform/
+.terraform.lock.hcl
+tfplan*
+
+# AWS
+.aws/
+
+# Scripts
+*.log

@@ -1,0 +1,6 @@
+primary_region     = "eu-west-1"
+dr_region         = "eu-central-1"
+environment       = "prod"
+notification_email = "admin@example.com"
+aws_account_id    = "123456789012"
+enable_dr         = false

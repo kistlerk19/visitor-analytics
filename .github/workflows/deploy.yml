@@ -1,0 +1,235 @@
+name: Deploy LAMP Stack with Disaster Recovery
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+env:
+  AWS_DEFAULT_REGION: eu-west-1
+  TF_ROOT: disaster-recovery
+  ENABLE_DR: false
+
+jobs:
+  validate:
+    name: Validate Terraform
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.5.7
+          
+      - name: Terraform Format Check
+        run: |
+          cd $TF_ROOT
+          terraform fmt -check
+          
+      - name: Terraform Init
+        run: |
+          cd $TF_ROOT
+          terraform init -backend=false
+          
+      - name: Terraform Validate
+        run: |
+          cd $TF_ROOT
+          terraform validate
+
+  build:
+    name: Build and Push Docker Image
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_DEFAULT_REGION }}
+          
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+        
+      - name: Create ECR repository if not exists
+        run: |
+          aws ecr describe-repositories --repository-names lamp-apache || \
+          aws ecr create-repository --repository-name lamp-apache
+          
+      - name: Build, tag, and push image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: lamp-apache
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker build -f disaster-recovery/Dockerfile.apache-rds -t $ECR_REPOSITORY .
+          docker tag $ECR_REPOSITORY:latest $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+
+  deploy:
+    name: Deploy Infrastructure
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_DEFAULT_REGION }}
+          
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.5.7
+          
+      - name: Cleanup existing resources
+        run: |
+          cd $TF_ROOT
+          aws ec2 describe-addresses --query 'Addresses[?AssociationId==null].AllocationId' --output text | xargs -n1 aws ec2 release-address --allocation-id 2>/dev/null || true
+          aws rds delete-db-instance --db-instance-identifier lamp-visitor-analytics-db-replica --skip-final-snapshot --region eu-central-1 2>/dev/null || true
+          aws ecs update-service --cluster lamp-visitor-analytics --service lamp-visitor-analytics --desired-count 0 --region eu-west-1 2>/dev/null || true
+          aws ecs delete-service --cluster lamp-visitor-analytics --service lamp-visitor-analytics --region eu-west-1 2>/dev/null || true
+          aws ecs delete-cluster --cluster lamp-visitor-analytics --region eu-west-1 2>/dev/null || true
+          aws rds delete-db-instance --db-instance-identifier lamp-visitor-analytics-db --skip-final-snapshot 2>/dev/null || true
+          
+      - name: Create terraform.tfvars
+        run: |
+          cd $TF_ROOT
+          cat > terraform.tfvars << EOF
+          primary_region = "${{ env.AWS_DEFAULT_REGION }}"
+          dr_region = "eu-central-1"
+          environment = "prod"
+          notification_email = "${{ secrets.NOTIFICATION_EMAIL }}"
+          aws_account_id = "${{ secrets.AWS_ACCOUNT_ID }}"
+          enable_dr = ${{ env.ENABLE_DR }}
+          image_tag = "${{ github.sha }}"
+          EOF
+          
+      - name: Terraform Init
+        run: |
+          cd $TF_ROOT
+          rm -rf .terraform terraform.tfstate* || true
+          terraform init
+          
+      - name: Terraform Plan
+        run: |
+          cd $TF_ROOT
+          terraform refresh -auto-approve || true
+          terraform plan -out=tfplan
+          
+      - name: Terraform Apply
+        run: |
+          cd $TF_ROOT
+          terraform apply -auto-approve tfplan
+
+  test:
+    name: Test Deployment
+    runs-on: ubuntu-latest
+    needs: deploy
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_DEFAULT_REGION }}
+          
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.5.7
+          
+      - name: Get ALB DNS
+        id: get-alb
+        run: |
+          cd $TF_ROOT
+          terraform init
+          ALB_DNS=$(terraform output -raw primary_alb_dns)
+          echo "alb_dns=$ALB_DNS" >> $GITHUB_OUTPUT
+          
+      - name: Check ECS service status
+        run: |
+          echo "🔍 Checking ECS service status..."
+          aws ecs describe-services --cluster lamp-visitor-analytics --services lamp-visitor-analytics --query 'services[0].{runningCount:runningCount,desiredCount:desiredCount,taskDefinition:taskDefinition}'
+          
+      - name: Wait for deployment
+        run: |
+          echo "⏳ Waiting for deployment to stabilize..."
+          sleep 120
+          
+      - name: Health Check Test
+        run: |
+          echo "🏥 Health Check Test"
+          curl -f -s http://${{ steps.get-alb.outputs.alb_dns }}/health.php | jq '.' || {
+            echo "Health check failed - checking logs"
+            aws logs tail /ecs/lamp-visitor-analytics --since 5m || true
+            exit 1
+          }
+          
+      - name: Main Application Test
+        run: |
+          echo "🌐 Main Application Test"
+          curl -f -s http://${{ steps.get-alb.outputs.alb_dns }}/ > /dev/null || {
+            echo "Main app failed"
+            exit 1
+          }
+          
+      - name: API Test
+        run: |
+          echo "📊 API Test"
+          curl -f -s http://${{ steps.get-alb.outputs.alb_dns }}/api.php?action=stats | jq '.' || {
+            echo "API test failed"
+            exit 1
+          }
+          
+      - name: Test Results
+        run: echo "🎉 All tests completed successfully"
+
+  enable-dr:
+    name: Enable Disaster Recovery
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.ref == 'refs/heads/main' && vars.ENABLE_DR == 'true'
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_DEFAULT_REGION }}
+          
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.5.7
+          
+      - name: Enable DR Infrastructure
+        run: |
+          cd $TF_ROOT
+          cat > terraform.tfvars << EOF
+          primary_region = "${{ env.AWS_DEFAULT_REGION }}"
+          dr_region = "eu-central-1"
+          environment = "prod"
+          notification_email = "${{ secrets.NOTIFICATION_EMAIL }}"
+          aws_account_id = "${{ secrets.AWS_ACCOUNT_ID }}"
+          enable_dr = true
+          image_tag = "${{ github.sha }}"
+          EOF
+          terraform init
+          terraform plan -out=tfplan-dr
+          terraform apply -auto-approve tfplan-dr
+          echo "DR infrastructure deployment completed"
