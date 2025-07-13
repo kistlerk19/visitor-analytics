@@ -58,19 +58,52 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_DEFAULT_REGION }}
           
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.5.7
+          
+      - name: Get ECR repository name
+        id: get-ecr
+        run: |
+          cd $TF_ROOT
+          # Create terraform.tfvars
+          cat > terraform.tfvars << EOF
+          primary_region = "${{ env.AWS_DEFAULT_REGION }}"
+          dr_region = "eu-central-1"
+          environment = "prod"
+          notification_email = "${{ secrets.NOTIFICATION_EMAIL }}"
+          aws_account_id = "${{ secrets.AWS_ACCOUNT_ID }}"
+          enable_dr = ${{ env.ENABLE_DR }}
+          image_tag = "${{ github.sha }}"
+          EOF
+          # Create S3 bucket for state
+          aws s3 mb s3://lamp-visitor-analytics-terraform-state-${{ secrets.AWS_ACCOUNT_ID }} --region ${{ env.AWS_DEFAULT_REGION }} 2>/dev/null || true
+          # Create backend configuration
+          cat > backend.tf << EOF
+          terraform {
+            backend "s3" {
+              bucket = "lamp-visitor-analytics-terraform-state-${{ secrets.AWS_ACCOUNT_ID }}"
+              key    = "terraform.tfstate"
+              region = "${{ env.AWS_DEFAULT_REGION }}"
+            }
+          }
+          EOF
+          terraform init
+          terraform apply -auto-approve -target=module.primary_ecr
+          ECR_REPO_URL=$(terraform output -raw primary_ecr_apache)
+          ECR_REPO_NAME=$(echo $ECR_REPO_URL | cut -d'/' -f2)
+          echo "ecr_repository_name=$ECR_REPO_NAME" >> $GITHUB_OUTPUT
+          echo "ecr_repository_url=$ECR_REPO_URL" >> $GITHUB_OUTPUT
+          
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
-        
-      - name: Create ECR repository if not exists
-        run: |
-          aws ecr describe-repositories --repository-names lamp-apache || \
-          aws ecr create-repository --repository-name lamp-apache
           
       - name: Build, tag, and push image
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          ECR_REPOSITORY: lamp-apache
+          ECR_REPOSITORY: ${{ steps.get-ecr.outputs.ecr_repository_name }}
           IMAGE_TAG: ${{ github.sha }}
         run: |
           docker build -f disaster-recovery/Dockerfile.apache-rds -t $ECR_REPOSITORY .
