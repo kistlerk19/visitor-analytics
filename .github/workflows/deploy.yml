@@ -254,7 +254,7 @@ jobs:
           echo "🔍 Checking ALB target health..."
           TG_ARN=$(aws elbv2 describe-target-groups --query 'TargetGroups[?contains(TargetGroupName, `tg-`)].TargetGroupArn' --output text)
           if [ -n "$TG_ARN" ]; then
-            aws elbv2 describe-target-health --target-group-arn $TG_ARN
+            aws elbv2 describe-target-health --target-group-arn "$TG_ARN"
           else
             echo "No target group found"
           fi
