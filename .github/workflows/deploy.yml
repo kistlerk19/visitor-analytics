@@ -252,8 +252,8 @@ jobs:
           echo "🏥 Health Check Test"
           echo "ALB DNS: ${{ steps.get-alb.outputs.alb_dns }}"
           echo "🔍 Checking ALB target health..."
-          TG_ARN=$(aws elbv2 describe-target-groups --query 'TargetGroups[?contains(TargetGroupName, `tg-`)].TargetGroupArn' --output text)
-          if [ -n "$TG_ARN" ]; then
+          TG_ARN=$(aws elbv2 describe-target-groups --query 'TargetGroups[?contains(TargetGroupName, `tg-`)].TargetGroupArn | [0]' --output text)
+          if [ -n "$TG_ARN" ] && [ "$TG_ARN" != "None" ]; then
             aws elbv2 describe-target-health --target-group-arn "$TG_ARN"
           else
             echo "No target group found"
