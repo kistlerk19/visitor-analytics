@@ -282,10 +282,16 @@ jobs:
       - name: Main Application Test
         run: |
           echo "🌐 Main Application Test"
-          curl -f -s http://${{ steps.get-alb.outputs.alb_dns }}/ > /dev/null || {
-            echo "Main app failed"
+          echo "Testing: http://${{ steps.get-alb.outputs.alb_dns }}/"
+          RESPONSE=$(curl -s -w "HTTPCODE:%{http_code}" http://${{ steps.get-alb.outputs.alb_dns }}/ || echo "CURL_FAILED")
+          HTTP_CODE=$(echo "$RESPONSE" | grep -o "HTTPCODE:[0-9]*" | cut -d: -f2)
+          BODY=$(echo "$RESPONSE" | sed 's/HTTPCODE:[0-9]*$//')
+          echo "HTTP Code: $HTTP_CODE"
+          echo "Response Body: $BODY"
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "Main app failed with HTTP $HTTP_CODE"
             exit 1
-          }
+          fi
           
       - name: API Test
         run: |
