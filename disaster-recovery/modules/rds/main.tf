@@ -36,14 +36,14 @@ resource "aws_db_instance" "main" {
 
   # Backup and Maintenance
   backup_retention_period = var.enable_dr ? 7 : 0
-  backup_window          = "03:00-04:00"
-  maintenance_window     = "sun:04:00-sun:05:00"
-  skip_final_snapshot    = true
-  deletion_protection    = false
+  backup_window           = "03:00-04:00"
+  maintenance_window      = "sun:04:00-sun:05:00"
+  skip_final_snapshot     = true
+  deletion_protection     = false
 
   # Performance
   performance_insights_enabled = false
-  monitoring_interval         = 0
+  monitoring_interval          = 0
 
   tags = merge(var.tags, {
     Name = "${var.project_name}-db"
@@ -77,7 +77,7 @@ resource "aws_db_instance" "replica" {
 
   # Performance
   performance_insights_enabled = false
-  monitoring_interval         = 0
+  monitoring_interval          = 0
 
   tags = merge(var.tags, {
     Name = "${var.project_name}-db-replica"

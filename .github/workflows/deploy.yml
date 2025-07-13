@@ -136,6 +136,22 @@ jobs:
         run: |
           cd $TF_ROOT
           terraform apply -auto-approve tfplan
+          
+      - name: Verify Deployment
+        run: |
+          cd $TF_ROOT
+          echo "Verifying Terraform outputs..."
+          terraform output || echo "No outputs available yet"
+          
+      - name: Upload Terraform State
+        uses: actions/upload-artifact@v4
+        with:
+          name: terraform-state
+          path: |
+            disaster-recovery/.terraform/
+            disaster-recovery/terraform.tfstate*
+            disaster-recovery/terraform.tfvars
+          retention-days: 1
 
   test:
     name: Test Deployment
@@ -144,6 +160,12 @@ jobs:
     if: github.ref == 'refs/heads/main'
     steps:
       - uses: actions/checkout@v4
+      
+      - name: Download Terraform State
+        uses: actions/download-artifact@v4
+        with:
+          name: terraform-state
+          path: .
       
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -162,7 +184,12 @@ jobs:
         run: |
           cd $TF_ROOT
           terraform init
-          ALB_DNS=$(terraform output -raw primary_alb_dns)
+          ALB_DNS=$(terraform output -raw primary_alb_dns 2>/dev/null || echo "")
+          if [ -z "$ALB_DNS" ]; then
+            echo "❌ No ALB DNS found in outputs"
+            terraform output
+            exit 1
+          fi
           echo "alb_dns=$ALB_DNS" >> $GITHUB_OUTPUT
           
       - name: Check ECS service status
@@ -173,14 +200,26 @@ jobs:
       - name: Wait for deployment
         run: |
           echo "⏳ Waiting for deployment to stabilize..."
-          sleep 120
+          echo "🔍 Checking ECS task health..."
+          aws ecs describe-services --cluster lamp-visitor-analytics --services lamp-visitor-analytics
+          echo "📋 Checking task definitions..."
+          aws ecs list-tasks --cluster lamp-visitor-analytics --service-name lamp-visitor-analytics
+          echo "⏳ Waiting 3 minutes for tasks to start..."
+          sleep 180
           
       - name: Health Check Test
         run: |
           echo "🏥 Health Check Test"
-          curl -f -s http://${{ steps.get-alb.outputs.alb_dns }}/health.php | jq '.' || {
-            echo "Health check failed - checking logs"
-            aws logs tail /ecs/lamp-visitor-analytics --since 5m || true
+          echo "ALB DNS: ${{ steps.get-alb.outputs.alb_dns }}"
+          echo "🔍 Checking ALB target health..."
+          aws elbv2 describe-target-health --target-group-arn $(aws elbv2 describe-target-groups --names lamp-visitor-analytics --query 'TargetGroups[0].TargetGroupArn' --output text) || true
+          echo "🔍 Testing health endpoint..."
+          curl -v http://${{ steps.get-alb.outputs.alb_dns }}/health.php || {
+            echo "Health check failed - debugging..."
+            echo "📋 ECS Task Status:"
+            aws ecs describe-tasks --cluster lamp-visitor-analytics --tasks $(aws ecs list-tasks --cluster lamp-visitor-analytics --service-name lamp-visitor-analytics --query 'taskArns[0]' --output text) || true
+            echo "📋 Container Logs:"
+            aws logs tail /ecs/lamp-visitor-analytics --since 10m || true
             exit 1
           }
           
@@ -210,6 +249,12 @@ jobs:
     if: github.ref == 'refs/heads/main' && vars.ENABLE_DR == 'true'
     steps:
       - uses: actions/checkout@v4
+      
+      - name: Download Terraform State
+        uses: actions/download-artifact@v4
+        with:
+          name: terraform-state
+          path: .
       
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
