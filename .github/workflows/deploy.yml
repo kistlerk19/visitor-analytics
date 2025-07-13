@@ -97,15 +97,18 @@ jobs:
         with:
           terraform_version: 1.5.7
           
-      - name: Cleanup existing resources
+      - name: Wait for ECS service to drain
         run: |
-          cd $TF_ROOT
-          aws ec2 describe-addresses --query 'Addresses[?AssociationId==null].AllocationId' --output text | xargs -n1 aws ec2 release-address --allocation-id 2>/dev/null || true
-          aws rds delete-db-instance --db-instance-identifier lamp-visitor-analytics-db-replica --skip-final-snapshot --region eu-central-1 2>/dev/null || true
-          aws ecs update-service --cluster lamp-visitor-analytics --service lamp-visitor-analytics --desired-count 0 --region eu-west-1 2>/dev/null || true
-          aws ecs delete-service --cluster lamp-visitor-analytics --service lamp-visitor-analytics --region eu-west-1 2>/dev/null || true
-          aws ecs delete-cluster --cluster lamp-visitor-analytics --region eu-west-1 2>/dev/null || true
-          aws rds delete-db-instance --db-instance-identifier lamp-visitor-analytics-db --skip-final-snapshot 2>/dev/null || true
+          echo "🔍 Checking for existing ECS services..."
+          if aws ecs describe-services --cluster lamp-visitor-analytics --services lamp-visitor-analytics 2>/dev/null | grep -q "ACTIVE\|DRAINING"; then
+            echo "⏳ ECS service exists, scaling down and waiting for drain..."
+            aws ecs update-service --cluster lamp-visitor-analytics --service lamp-visitor-analytics --desired-count 0 2>/dev/null || true
+            echo "⏳ Waiting for service to drain (up to 10 minutes)..."
+            aws ecs wait services-stable --cluster lamp-visitor-analytics --services lamp-visitor-analytics --cli-read-timeout 600 || true
+            echo "🗑️ Deleting drained service..."
+            aws ecs delete-service --cluster lamp-visitor-analytics --service lamp-visitor-analytics 2>/dev/null || true
+            sleep 30
+          fi
           
       - name: Create terraform.tfvars
         run: |
@@ -120,10 +123,27 @@ jobs:
           image_tag = "${{ github.sha }}"
           EOF
           
+      - name: Create S3 bucket for state
+        run: |
+          aws s3 mb s3://lamp-visitor-analytics-terraform-state-${{ secrets.AWS_ACCOUNT_ID }} --region ${{ env.AWS_DEFAULT_REGION }} 2>/dev/null || true
+          aws s3api put-bucket-versioning --bucket lamp-visitor-analytics-terraform-state-${{ secrets.AWS_ACCOUNT_ID }} --versioning-configuration Status=Enabled 2>/dev/null || true
+          
+      - name: Update backend configuration
+        run: |
+          cd $TF_ROOT
+          cat > backend.tf << EOF
+          terraform {
+            backend "s3" {
+              bucket = "lamp-visitor-analytics-terraform-state-${{ secrets.AWS_ACCOUNT_ID }}"
+              key    = "terraform.tfstate"
+              region = "${{ env.AWS_DEFAULT_REGION }}"
+            }
+          }
+          EOF
+          
       - name: Terraform Init
         run: |
           cd $TF_ROOT
-          rm -rf .terraform terraform.tfstate* || true
           terraform init
           
       - name: Terraform Plan

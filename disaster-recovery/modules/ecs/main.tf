@@ -203,6 +203,13 @@ resource "aws_ecs_service" "app" {
 
   depends_on = [aws_lb_listener.app]
 
+  lifecycle {
+    create_before_destroy = false
+    ignore_changes = [
+      desired_count
+    ]
+  }
+
   tags = var.tags
 }
 
