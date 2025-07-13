@@ -130,17 +130,25 @@ jobs:
         with:
           terraform_version: 1.5.7
           
-      - name: Wait for ECS service to drain
+      - name: Clean up existing ECS service
         run: |
           echo "🔍 Checking for existing ECS services..."
           if aws ecs describe-services --cluster lamp-visitor-analytics --services lamp-visitor-analytics 2>/dev/null | grep -q "ACTIVE\|DRAINING"; then
-            echo "⏳ ECS service exists, scaling down and waiting for drain..."
+            echo "⏳ Scaling down service to 0..."
             aws ecs update-service --cluster lamp-visitor-analytics --service lamp-visitor-analytics --desired-count 0 2>/dev/null || true
-            echo "⏳ Waiting for service to drain (up to 10 minutes)..."
-            aws ecs wait services-stable --cluster lamp-visitor-analytics --services lamp-visitor-analytics --cli-read-timeout 600 || true
-            echo "🗑️ Deleting drained service..."
-            aws ecs delete-service --cluster lamp-visitor-analytics --service lamp-visitor-analytics 2>/dev/null || true
-            sleep 30
+            echo "⏳ Waiting for tasks to stop..."
+            sleep 60
+            echo "🗑️ Force deleting service..."
+            aws ecs delete-service --cluster lamp-visitor-analytics --service lamp-visitor-analytics --force 2>/dev/null || true
+            echo "⏳ Waiting for service deletion..."
+            for i in {1..20}; do
+              if ! aws ecs describe-services --cluster lamp-visitor-analytics --services lamp-visitor-analytics 2>/dev/null | grep -q "ACTIVE\|DRAINING"; then
+                echo "✅ Service deleted successfully"
+                break
+              fi
+              echo "Waiting... ($i/20)"
+              sleep 15
+            done
           fi
           
       - name: Create terraform.tfvars
@@ -188,6 +196,9 @@ jobs:
       - name: Terraform Apply
         run: |
           cd $TF_ROOT
+          # Apply everything except ECS service first
+          terraform apply -auto-approve -target=module.primary_networking -target=module.primary_security -target=module.primary_ecr -target=module.primary_secrets -target=module.primary_rds
+          # Then apply ECS components
           terraform apply -auto-approve tfplan
           
       - name: Verify Deployment
