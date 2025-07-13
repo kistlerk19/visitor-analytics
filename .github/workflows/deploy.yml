@@ -252,14 +252,30 @@ jobs:
           echo "🏥 Health Check Test"
           echo "ALB DNS: ${{ steps.get-alb.outputs.alb_dns }}"
           echo "🔍 Checking ALB target health..."
-          aws elbv2 describe-target-health --target-group-arn $(aws elbv2 describe-target-groups --names lamp-visitor-analytics --query 'TargetGroups[0].TargetGroupArn' --output text) || true
+          TG_ARN=$(aws elbv2 describe-target-groups --query 'TargetGroups[?contains(TargetGroupName, `tg-`)].TargetGroupArn' --output text)
+          if [ -n "$TG_ARN" ]; then
+            aws elbv2 describe-target-health --target-group-arn $TG_ARN
+          else
+            echo "No target group found"
+          fi
+          echo "📋 ECS Service Status:"
+          aws ecs describe-services --cluster lamp-visitor-analytics --services lamp-visitor-analytics
+          echo "📋 ECS Tasks:"
+          aws ecs list-tasks --cluster lamp-visitor-analytics --service-name lamp-visitor-analytics
+          TASK_ARN=$(aws ecs list-tasks --cluster lamp-visitor-analytics --service-name lamp-visitor-analytics --query 'taskArns[0]' --output text)
+          if [ "$TASK_ARN" != "None" ] && [ -n "$TASK_ARN" ]; then
+            echo "📋 Task Details:"
+            aws ecs describe-tasks --cluster lamp-visitor-analytics --tasks $TASK_ARN
+          fi
           echo "🔍 Testing health endpoint..."
           curl -v http://${{ steps.get-alb.outputs.alb_dns }}/health-simple.php || {
             echo "Health check failed - debugging..."
-            echo "📋 ECS Task Status:"
-            aws ecs describe-tasks --cluster lamp-visitor-analytics --tasks $(aws ecs list-tasks --cluster lamp-visitor-analytics --service-name lamp-visitor-analytics --query 'taskArns[0]' --output text) || true
             echo "📋 Container Logs:"
-            aws logs tail /ecs/lamp-visitor-analytics --since 10m || true
+            aws logs describe-log-groups --log-group-name-prefix "/ecs/lamp-visitor-analytics" || true
+            LOG_GROUP=$(aws logs describe-log-groups --log-group-name-prefix "/ecs/lamp-visitor-analytics" --query 'logGroups[0].logGroupName' --output text)
+            if [ "$LOG_GROUP" != "None" ]; then
+              aws logs tail $LOG_GROUP --since 10m || true
+            fi
             exit 1
           }
           
