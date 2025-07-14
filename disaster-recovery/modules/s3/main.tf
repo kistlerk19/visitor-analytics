@@ -130,6 +130,10 @@ resource "aws_s3_bucket_lifecycle_configuration" "assets" {
     id     = "lifecycle"
     status = "Enabled"
 
+    filter {
+      prefix = ""
+    }
+
     noncurrent_version_transition {
       noncurrent_days = 30
       storage_class   = "GLACIER"

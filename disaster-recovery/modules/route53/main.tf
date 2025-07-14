@@ -50,7 +50,7 @@ resource "aws_route53_health_check" "primary" {
   request_interval               = 30
   cloudwatch_alarm_region        = var.primary_region
   cloudwatch_alarm_name          = "${var.project_name}-primary-health"
-  insufficient_data_health_status = "Failure"
+  insufficient_data_health_status = "LastKnownStatus"
 
   tags = merge(var.tags, {
     Name = "${var.project_name}-primary-health-check"

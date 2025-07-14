@@ -51,7 +51,6 @@ resource "aws_db_instance" "main" {
     ignore_changes = [
       password,
       final_snapshot_identifier,
-      latest_restorable_time,
       status,
       tags_all
     ]
