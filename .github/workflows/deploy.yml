@@ -130,6 +130,29 @@ jobs:
         with:
           terraform_version: 1.5.7
           
+      - name: Clean up unused VPCs
+        run: |
+          echo "🧹 Cleaning up unused VPCs..."
+          # Get VPCs that are not default and have no instances
+          aws ec2 describe-vpcs --query 'Vpcs[?IsDefault==`false`].VpcId' --output text | while read vpc_id; do
+            if [ -n "$vpc_id" ]; then
+              # Check if VPC has any instances
+              INSTANCES=$(aws ec2 describe-instances --filters "Name=vpc-id,Values=$vpc_id" --query 'Reservations[].Instances[?State.Name!=`terminated`].InstanceId' --output text)
+              if [ -z "$INSTANCES" ]; then
+                echo "🗑️ Attempting to delete unused VPC: $vpc_id"
+                # Delete associated resources first
+                aws ec2 describe-subnets --filters "Name=vpc-id,Values=$vpc_id" --query 'Subnets[].SubnetId' --output text | xargs -r -n1 aws ec2 delete-subnet --subnet-id 2>/dev/null || true
+                aws ec2 describe-internet-gateways --filters "Name=attachment.vpc-id,Values=$vpc_id" --query 'InternetGateways[].InternetGatewayId' --output text | while read igw_id; do
+                  aws ec2 detach-internet-gateway --internet-gateway-id $igw_id --vpc-id $vpc_id 2>/dev/null || true
+                  aws ec2 delete-internet-gateway --internet-gateway-id $igw_id 2>/dev/null || true
+                done
+                aws ec2 describe-route-tables --filters "Name=vpc-id,Values=$vpc_id" --query 'RouteTables[?Associations[0].Main!=`true`].RouteTableId' --output text | xargs -r -n1 aws ec2 delete-route-table --route-table-id 2>/dev/null || true
+                aws ec2 describe-security-groups --filters "Name=vpc-id,Values=$vpc_id" --query 'SecurityGroups[?GroupName!=`default`].GroupId' --output text | xargs -r -n1 aws ec2 delete-security-group --group-id 2>/dev/null || true
+                aws ec2 delete-vpc --vpc-id $vpc_id 2>/dev/null || true
+              fi
+            fi
+          done
+          
       - name: Clean up existing ECS service
         run: |
           echo "🔍 Checking for existing ECS services..."
@@ -212,8 +235,6 @@ jobs:
         run: |
           cd $TF_ROOT
           # Apply everything except ECS service first
-          terraform apply -auto-approve -target=module.primary_networking -target=module.primary_security -target=module.primary_ecr -target=module.primary_secrets -target=module.primary_rds
-          # Then apply ECS components
           terraform apply -auto-approve tfplan
           
       - name: Verify Deployment
