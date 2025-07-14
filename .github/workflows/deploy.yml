@@ -268,9 +268,33 @@ jobs:
             fi
           }
           
-          # Import VPC
+          # Import Primary VPC and networking
           VPC_ID=$(aws ec2 describe-vpcs --filters "Name=tag:Name,Values=lamp-visitor-analytics-vpc" --query 'Vpcs[0].VpcId' --output text 2>/dev/null || echo "None")
-          safe_import "module.primary_networking.aws_vpc.main" "$VPC_ID" "VPC"
+          safe_import "module.primary_networking.aws_vpc.main" "$VPC_ID" "Primary VPC"
+          
+          # Import subnets
+          for subnet in $(aws ec2 describe-subnets --filters "Name=vpc-id,Values=$VPC_ID" --query 'Subnets[].SubnetId' --output text 2>/dev/null); do
+            SUBNET_NAME=$(aws ec2 describe-subnets --subnet-ids $subnet --query 'Subnets[0].Tags[?Key==`Name`].Value' --output text 2>/dev/null)
+            if [[ "$SUBNET_NAME" == *"public"* ]]; then
+              safe_import "module.primary_networking.aws_subnet.public[0]" "$subnet" "Public Subnet" || safe_import "module.primary_networking.aws_subnet.public[1]" "$subnet" "Public Subnet"
+            elif [[ "$SUBNET_NAME" == *"private"* ]]; then
+              safe_import "module.primary_networking.aws_subnet.private[0]" "$subnet" "Private Subnet" || safe_import "module.primary_networking.aws_subnet.private[1]" "$subnet" "Private Subnet"
+            fi
+          done
+          
+          # Import IGW
+          IGW_ID=$(aws ec2 describe-internet-gateways --filters "Name=attachment.vpc-id,Values=$VPC_ID" --query 'InternetGateways[0].InternetGatewayId' --output text 2>/dev/null || echo "None")
+          safe_import "module.primary_networking.aws_internet_gateway.main" "$IGW_ID" "Internet Gateway"
+          
+          # Import NAT Gateway
+          NAT_ID=$(aws ec2 describe-nat-gateways --filter "Name=vpc-id,Values=$VPC_ID" --query 'NatGateways[0].NatGatewayId' --output text 2>/dev/null || echo "None")
+          safe_import "module.primary_networking.aws_nat_gateway.main[0]" "$NAT_ID" "NAT Gateway"
+          
+          # Import DR VPC if exists
+          DR_VPC_ID=$(aws ec2 describe-vpcs --filters "Name=tag:Name,Values=lamp-visitor-analytics-vpc" --query 'Vpcs[0].VpcId' --output text --region eu-central-1 2>/dev/null || echo "None")
+          if [ "$DR_VPC_ID" != "None" ]; then
+            safe_import "module.dr_networking[0].aws_vpc.main" "$DR_VPC_ID" "DR VPC"
+          fi
           
           # Import ECS cluster
           if aws ecs describe-clusters --clusters lamp-visitor-analytics 2>/dev/null | grep -q "clusterName"; then
@@ -419,8 +443,9 @@ jobs:
           
           echo "⏳ Waiting for deployment to stabilize..."
           
-          # Check desired count first
-          DESIRED_COUNT=$(aws ecs describe-services --cluster lamp-visitor-analytics --services lamp-visitor-analytics --query 'services[0].desiredCount' --output text 2>/dev/null || echo "0")
+          # Check desired count first - find service by cluster
+          SERVICE_NAME=$(aws ecs list-services --cluster lamp-visitor-analytics --query 'serviceArns[0]' --output text | cut -d'/' -f3 2>/dev/null || echo "lamp-visitor-analytics")
+          DESIRED_COUNT=$(aws ecs describe-services --cluster lamp-visitor-analytics --services "$SERVICE_NAME" --query 'services[0].desiredCount' --output text 2>/dev/null || echo "0")
           
           if [ "$DESIRED_COUNT" = "0" ]; then
             echo "✅ Service is scaled to 0 (expected for DR setup)"
@@ -428,7 +453,7 @@ jobs:
           fi
           
           echo "🔍 Waiting for ECS service to be stable..."
-          aws ecs wait services-stable --cluster lamp-visitor-analytics --services lamp-visitor-analytics --cli-read-timeout 600 || {
+          aws ecs wait services-stable --cluster lamp-visitor-analytics --services "$SERVICE_NAME" --cli-read-timeout 600 || {
             echo "Service failed to stabilize, checking status..."
             aws ecs describe-services --cluster lamp-visitor-analytics --services lamp-visitor-analytics
             exit 1
@@ -440,8 +465,12 @@ jobs:
           echo "🏥 Health Check Test"
           echo "ALB DNS: ${{ steps.get-alb.outputs.alb_dns }}"
           
+          # Find the actual service name
+          SERVICE_NAME=$(aws ecs list-services --cluster lamp-visitor-analytics --query 'serviceArns[0]' --output text | cut -d'/' -f3 2>/dev/null || echo "lamp-visitor-analytics")
+          echo "Service name: $SERVICE_NAME"
+          
           # Check if service has running tasks
-          RUNNING_COUNT=$(aws ecs describe-services --cluster lamp-visitor-analytics --services lamp-visitor-analytics --query 'services[0].runningCount' --output text 2>/dev/null || echo "0")
+          RUNNING_COUNT=$(aws ecs describe-services --cluster lamp-visitor-analytics --services "$SERVICE_NAME" --query 'services[0].runningCount' --output text 2>/dev/null || echo "0")
           
           if [ "$RUNNING_COUNT" = "0" ]; then
             echo "⚠️  No running tasks - service is scaled to 0 (DR setup)"
@@ -452,7 +481,7 @@ jobs:
           echo "🔍 Testing health endpoint..."
           curl -f http://${{ steps.get-alb.outputs.alb_dns }}/health-simple.php || {
             echo "Health check failed - service may still be starting"
-            aws ecs describe-services --cluster lamp-visitor-analytics --services lamp-visitor-analytics
+            aws ecs describe-services --cluster lamp-visitor-analytics --services "$SERVICE_NAME"
             exit 1
           }
           echo "✅ Health check passed"
@@ -461,8 +490,11 @@ jobs:
         run: |
           echo "🌐 Main Application Test"
           
+          # Find the actual service name
+          SERVICE_NAME=$(aws ecs list-services --cluster lamp-visitor-analytics --query 'serviceArns[0]' --output text | cut -d'/' -f3 2>/dev/null || echo "lamp-visitor-analytics")
+          
           # Check if service has running tasks
-          RUNNING_COUNT=$(aws ecs describe-services --cluster lamp-visitor-analytics --services lamp-visitor-analytics --query 'services[0].runningCount' --output text 2>/dev/null || echo "0")
+          RUNNING_COUNT=$(aws ecs describe-services --cluster lamp-visitor-analytics --services "$SERVICE_NAME" --query 'services[0].runningCount' --output text 2>/dev/null || echo "0")
           
           if [ "$RUNNING_COUNT" = "0" ]; then
             echo "⚠️  Skipping application test - no running tasks (DR setup)"

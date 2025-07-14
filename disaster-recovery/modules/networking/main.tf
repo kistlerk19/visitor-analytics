@@ -4,6 +4,13 @@ resource "aws_vpc" "main" {
   enable_dns_hostnames = true
   enable_dns_support   = true
 
+  lifecycle {
+    prevent_destroy = true
+    ignore_changes = [
+      tags_all
+    ]
+  }
+
   tags = merge(var.tags, {
     Name = "${var.project_name}-vpc"
   })
@@ -12,6 +19,13 @@ resource "aws_vpc" "main" {
 # Internet Gateway
 resource "aws_internet_gateway" "main" {
   vpc_id = aws_vpc.main.id
+
+  lifecycle {
+    prevent_destroy = true
+    ignore_changes = [
+      tags_all
+    ]
+  }
 
   tags = merge(var.tags, {
     Name = "${var.project_name}-igw"
@@ -27,6 +41,13 @@ resource "aws_subnet" "public" {
   availability_zone       = var.availability_zones[count.index]
   map_public_ip_on_launch = true
 
+  lifecycle {
+    prevent_destroy = true
+    ignore_changes = [
+      tags_all
+    ]
+  }
+
   tags = merge(var.tags, {
     Name = "${var.project_name}-public-${count.index + 1}"
     Type = "public"
@@ -40,6 +61,13 @@ resource "aws_subnet" "private" {
   vpc_id            = aws_vpc.main.id
   cidr_block        = var.private_subnet_cidrs[count.index]
   availability_zone = var.availability_zones[count.index]
+
+  lifecycle {
+    prevent_destroy = true
+    ignore_changes = [
+      tags_all
+    ]
+  }
 
   tags = merge(var.tags, {
     Name = "${var.project_name}-private-${count.index + 1}"
@@ -62,6 +90,13 @@ resource "aws_eip" "nat" {
 resource "aws_nat_gateway" "main" {
   allocation_id = aws_eip.nat.id
   subnet_id     = aws_subnet.public[0].id
+
+  lifecycle {
+    prevent_destroy = true
+    ignore_changes = [
+      tags_all
+    ]
+  }
 
   tags = merge(var.tags, {
     Name = "${var.project_name}-nat"
