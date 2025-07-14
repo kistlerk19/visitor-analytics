@@ -130,6 +130,30 @@ jobs:
         with:
           terraform_version: 1.5.7
           
+      - name: Destroy DR resources
+        run: |
+          cd $TF_ROOT
+          cat > terraform.tfvars << EOF
+          primary_region = "${{ env.AWS_DEFAULT_REGION }}"
+          dr_region = "eu-central-1"
+          environment = "prod"
+          notification_email = "${{ secrets.NOTIFICATION_EMAIL }}"
+          aws_account_id = "${{ secrets.AWS_ACCOUNT_ID }}"
+          enable_dr = true
+          image_tag = "${{ github.sha }}"
+          EOF
+          cat > backend.tf << EOF
+          terraform {
+            backend "s3" {
+              bucket = "lamp-visitor-analytics-terraform-state-${{ secrets.AWS_ACCOUNT_ID }}"
+              key    = "terraform.tfstate"
+              region = "${{ env.AWS_DEFAULT_REGION }}"
+            }
+          }
+          EOF
+          terraform init
+          terraform destroy -target=module.dr_networking -target=module.dr_ecs -target=module.dr_security -target=module.dr_ecr -auto-approve 2>/dev/null || true
+          
       - name: Clean up unused VPCs
         run: |
           echo "🧹 Cleaning up unused VPCs..."
