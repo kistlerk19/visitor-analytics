@@ -133,23 +133,38 @@ jobs:
       - name: Clean up existing ECS service
         run: |
           echo "🔍 Checking for existing ECS services..."
-          if aws ecs describe-services --cluster lamp-visitor-analytics --services lamp-visitor-analytics 2>/dev/null | grep -q "ACTIVE\|DRAINING"; then
+          # Stop all tasks first
+          TASK_ARNS=$(aws ecs list-tasks --cluster lamp-visitor-analytics --service-name lamp-visitor-analytics --query 'taskArns[]' --output text 2>/dev/null || echo "")
+          if [ -n "$TASK_ARNS" ]; then
+            echo "🛑 Stopping all tasks..."
+            for task in $TASK_ARNS; do
+              aws ecs stop-task --cluster lamp-visitor-analytics --task $task 2>/dev/null || true
+            done
+          fi
+          
+          # Scale service to 0 and delete
+          if aws ecs describe-services --cluster lamp-visitor-analytics --services lamp-visitor-analytics 2>/dev/null | grep -q "serviceName"; then
             echo "⏳ Scaling down service to 0..."
             aws ecs update-service --cluster lamp-visitor-analytics --service lamp-visitor-analytics --desired-count 0 2>/dev/null || true
-            echo "⏳ Waiting for tasks to stop..."
-            sleep 60
+            sleep 30
             echo "🗑️ Force deleting service..."
             aws ecs delete-service --cluster lamp-visitor-analytics --service lamp-visitor-analytics --force 2>/dev/null || true
+            
+            # Wait for complete deletion
             echo "⏳ Waiting for service deletion..."
-            for i in {1..20}; do
-              if ! aws ecs describe-services --cluster lamp-visitor-analytics --services lamp-visitor-analytics 2>/dev/null | grep -q "ACTIVE\|DRAINING"; then
+            for i in {1..30}; do
+              if ! aws ecs describe-services --cluster lamp-visitor-analytics --services lamp-visitor-analytics 2>/dev/null | grep -q "serviceName"; then
                 echo "✅ Service deleted successfully"
                 break
               fi
-              echo "Waiting... ($i/20)"
-              sleep 15
+              echo "Waiting... ($i/30)"
+              sleep 10
             done
           fi
+          
+          # Clean up any remaining task definitions
+          echo "🧹 Cleaning up old task definitions..."
+          aws ecs list-task-definitions --family-prefix lamp-visitor-analytics --status ACTIVE --query 'taskDefinitionArns[:-1]' --output text | xargs -r -n1 aws ecs deregister-task-definition --task-definition 2>/dev/null || true
           
       - name: Create terraform.tfvars
         run: |
