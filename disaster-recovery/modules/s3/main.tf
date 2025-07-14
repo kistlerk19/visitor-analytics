@@ -66,7 +66,7 @@ resource "aws_s3_bucket_replication_configuration" "assets" {
 # IAM role for S3 replication
 resource "aws_iam_role" "replication" {
   count = var.enable_dr ? 1 : 0
-  name  = "${var.project_name}-s3-replication-role"
+  name  = "${var.project_name}-s3-replication-role-${random_id.suffix.hex}"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -84,7 +84,7 @@ resource "aws_iam_role" "replication" {
 
 resource "aws_iam_policy" "replication" {
   count = var.enable_dr ? 1 : 0
-  name  = "${var.project_name}-s3-replication-policy"
+  name  = "${var.project_name}-s3-replication-policy-${random_id.suffix.hex}"
 
   policy = jsonencode({
     Version = "2012-10-17"

@@ -65,7 +65,7 @@ resource "aws_db_instance" "main" {
 resource "aws_db_instance" "replica" {
   count = var.enable_dr ? 1 : 0
 
-  identifier = "${var.project_name}-db-replica"
+  identifier = "${var.project_name}-db-replica-${random_id.suffix.hex}"
 
   # Replica configuration
   replicate_source_db = aws_db_instance.main.arn

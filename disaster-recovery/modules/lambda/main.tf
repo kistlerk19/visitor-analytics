@@ -86,7 +86,7 @@ data "archive_file" "health_lambda_zip" {
 
 # IAM role for Lambda
 resource "aws_iam_role" "lambda_role" {
-  name = "${var.project_name}-lambda-role"
+  name = "${var.project_name}-lambda-role-${random_id.suffix.hex}"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -105,7 +105,7 @@ resource "aws_iam_role" "lambda_role" {
 resource "aws_iam_role" "dr_lambda_role" {
   count    = var.enable_dr ? 1 : 0
   provider = aws.dr
-  name     = "${var.project_name}-lambda-role-dr"
+  name     = "${var.project_name}-lambda-role-dr-${random_id.suffix.hex}"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -123,7 +123,7 @@ resource "aws_iam_role" "dr_lambda_role" {
 
 # Lambda execution policy
 resource "aws_iam_policy" "lambda_policy" {
-  name = "${var.project_name}-lambda-policy"
+  name = "${var.project_name}-lambda-policy-${random_id.suffix.hex}"
 
   policy = jsonencode({
     Version = "2012-10-17"
