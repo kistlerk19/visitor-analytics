@@ -7,6 +7,13 @@ resource "aws_ecs_cluster" "main" {
     value = "disabled"
   }
 
+  lifecycle {
+    prevent_destroy = true
+    ignore_changes = [
+      tags_all
+    ]
+  }
+
   tags = var.tags
 }
 

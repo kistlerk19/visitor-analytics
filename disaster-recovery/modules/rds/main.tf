@@ -45,6 +45,18 @@ resource "aws_db_instance" "main" {
   performance_insights_enabled = false
   monitoring_interval          = 0
 
+  # Lifecycle protection
+  lifecycle {
+    prevent_destroy = true
+    ignore_changes = [
+      password,
+      final_snapshot_identifier,
+      latest_restorable_time,
+      status,
+      tags_all
+    ]
+  }
+
   tags = merge(var.tags, {
     Name = "${var.project_name}-db"
   })

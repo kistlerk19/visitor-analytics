@@ -37,3 +37,33 @@ output "primary_secrets_name" {
   description = "Primary secrets name"
   value       = module.primary_secrets.secret_name
 }
+
+output "s3_assets_bucket" {
+  description = "S3 assets bucket name"
+  value       = module.primary_s3.assets_bucket_name
+}
+
+output "dr_s3_assets_bucket" {
+  description = "DR S3 assets bucket name"
+  value       = module.primary_s3.dr_assets_bucket_name
+}
+
+output "lambda_dr_function" {
+  description = "DR automation Lambda function name"
+  value       = module.primary_lambda.dr_automation_function_name
+}
+
+output "lambda_health_function" {
+  description = "Health monitor Lambda function name"
+  value       = module.primary_lambda.health_monitor_function_name
+}
+
+output "route53_hosted_zone_id" {
+  description = "Route53 hosted zone ID"
+  value       = module.primary_route53.hosted_zone_id
+}
+
+output "route53_name_servers" {
+  description = "Route53 name servers"
+  value       = module.primary_route53.name_servers
+}

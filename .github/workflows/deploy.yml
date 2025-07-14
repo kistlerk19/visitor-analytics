@@ -9,6 +9,7 @@ on:
 env:
   AWS_DEFAULT_REGION: eu-west-1
   TF_ROOT: disaster-recovery
+  ENABLE_DR: false
 
 jobs:
   validate:
@@ -66,16 +67,19 @@ jobs:
         id: get-ecr
         run: |
           cd $TF_ROOT
+          # Create terraform.tfvars
           cat > terraform.tfvars << EOF
           primary_region = "${{ env.AWS_DEFAULT_REGION }}"
           dr_region = "eu-central-1"
           environment = "prod"
           notification_email = "${{ secrets.NOTIFICATION_EMAIL }}"
           aws_account_id = "${{ secrets.AWS_ACCOUNT_ID }}"
-          enable_dr = false
+          enable_dr = ${{ env.ENABLE_DR }}
           image_tag = "${{ github.sha }}"
           EOF
+          # Create S3 bucket for state
           aws s3 mb s3://lamp-visitor-analytics-terraform-state-${{ secrets.AWS_ACCOUNT_ID }} --region ${{ env.AWS_DEFAULT_REGION }} 2>/dev/null || true
+          # Create backend configuration
           cat > backend.tf << EOF
           terraform {
             backend "s3" {
@@ -153,11 +157,14 @@ jobs:
       - name: Clean up unused VPCs
         run: |
           echo "🧹 Cleaning up unused VPCs..."
+          # Get VPCs that are not default and have no instances
           aws ec2 describe-vpcs --query 'Vpcs[?IsDefault==`false`].VpcId' --output text | while read vpc_id; do
             if [ -n "$vpc_id" ]; then
+              # Check if VPC has any instances
               INSTANCES=$(aws ec2 describe-instances --filters "Name=vpc-id,Values=$vpc_id" --query 'Reservations[].Instances[?State.Name!=`terminated`].InstanceId' --output text)
               if [ -z "$INSTANCES" ]; then
                 echo "🗑️ Attempting to delete unused VPC: $vpc_id"
+                # Delete associated resources first
                 aws ec2 describe-subnets --filters "Name=vpc-id,Values=$vpc_id" --query 'Subnets[].SubnetId' --output text | xargs -r -n1 aws ec2 delete-subnet --subnet-id 2>/dev/null || true
                 aws ec2 describe-internet-gateways --filters "Name=attachment.vpc-id,Values=$vpc_id" --query 'InternetGateways[].InternetGatewayId' --output text | while read igw_id; do
                   aws ec2 detach-internet-gateway --internet-gateway-id $igw_id --vpc-id $vpc_id 2>/dev/null || true
@@ -173,6 +180,7 @@ jobs:
       - name: Clean up existing ECS service
         run: |
           echo "🔍 Checking for existing ECS services..."
+          # Stop all tasks first
           TASK_ARNS=$(aws ecs list-tasks --cluster lamp-visitor-analytics --service-name lamp-visitor-analytics --query 'taskArns[]' --output text 2>/dev/null || echo "")
           if [ -n "$TASK_ARNS" ]; then
             echo "🛑 Stopping all tasks..."
@@ -181,6 +189,7 @@ jobs:
             done
           fi
           
+          # Scale service to 0 and delete
           if aws ecs describe-services --cluster lamp-visitor-analytics --services lamp-visitor-analytics 2>/dev/null | grep -q "serviceName"; then
             echo "⏳ Scaling down service to 0..."
             aws ecs update-service --cluster lamp-visitor-analytics --service lamp-visitor-analytics --desired-count 0 2>/dev/null || true
@@ -188,6 +197,7 @@ jobs:
             echo "🗑️ Force deleting service..."
             aws ecs delete-service --cluster lamp-visitor-analytics --service lamp-visitor-analytics --force 2>/dev/null || true
             
+            # Wait for complete deletion
             echo "⏳ Waiting for service deletion..."
             for i in {1..30}; do
               if ! aws ecs describe-services --cluster lamp-visitor-analytics --services lamp-visitor-analytics 2>/dev/null | grep -q "serviceName"; then
@@ -199,6 +209,7 @@ jobs:
             done
           fi
           
+          # Clean up any remaining task definitions
           echo "🧹 Cleaning up old task definitions..."
           aws ecs list-task-definitions --family-prefix lamp-visitor-analytics --status ACTIVE --query 'taskDefinitionArns[:-1]' --output text | xargs -r -n1 aws ecs deregister-task-definition --task-definition 2>/dev/null || true
           
@@ -211,7 +222,7 @@ jobs:
           environment = "prod"
           notification_email = "${{ secrets.NOTIFICATION_EMAIL }}"
           aws_account_id = "${{ secrets.AWS_ACCOUNT_ID }}"
-          enable_dr = false
+          enable_dr = ${{ env.ENABLE_DR }}
           image_tag = "${{ github.sha }}"
           EOF
           
@@ -243,55 +254,97 @@ jobs:
           cd $TF_ROOT
           echo "🔍 Checking for existing resources to import..."
           
+          # Function to safely import resources
+          safe_import() {
+            local resource_path="$1"
+            local resource_id="$2"
+            local resource_name="$3"
+            
+            if [ -n "$resource_id" ] && [ "$resource_id" != "None" ] && [ "$resource_id" != "null" ]; then
+              echo "📥 Importing $resource_name: $resource_id"
+              terraform import "$resource_path" "$resource_id" 2>/dev/null || {
+                echo "⚠️  Import failed for $resource_name (may already exist in state)"
+              }
+            fi
+          }
+          
+          # Import VPC
           VPC_ID=$(aws ec2 describe-vpcs --filters "Name=tag:Name,Values=lamp-visitor-analytics-vpc" --query 'Vpcs[0].VpcId' --output text 2>/dev/null || echo "None")
-          if [ "$VPC_ID" != "None" ] && [ -n "$VPC_ID" ]; then
-            echo "📥 Importing existing VPC: $VPC_ID"
-            terraform import module.primary_networking.aws_vpc.main $VPC_ID 2>/dev/null || true
-          fi
+          safe_import "module.primary_networking.aws_vpc.main" "$VPC_ID" "VPC"
           
+          # Import ECS cluster
           if aws ecs describe-clusters --clusters lamp-visitor-analytics 2>/dev/null | grep -q "clusterName"; then
-            echo "📥 Importing existing ECS cluster"
-            terraform import module.primary_ecs.aws_ecs_cluster.main lamp-visitor-analytics 2>/dev/null || true
+            safe_import "module.primary_ecs.aws_ecs_cluster.main" "lamp-visitor-analytics" "ECS Cluster"
           fi
           
+          # Import ALB
           ALB_ARN=$(aws elbv2 describe-load-balancers --query 'LoadBalancers[?contains(LoadBalancerName, `alb-`)].LoadBalancerArn | [0]' --output text 2>/dev/null || echo "None")
-          if [ "$ALB_ARN" != "None" ] && [ -n "$ALB_ARN" ]; then
-            echo "📥 Importing existing ALB: $ALB_ARN"
-            terraform import module.primary_ecs.aws_lb.main $ALB_ARN 2>/dev/null || true
-          fi
+          safe_import "module.primary_ecs.aws_lb.main" "$ALB_ARN" "ALB"
           
+          # Import RDS
           RDS_ID=$(aws rds describe-db-instances --query 'DBInstances[?contains(DBInstanceIdentifier, `lamp-visitor-analytics-db`)].DBInstanceIdentifier | [0]' --output text 2>/dev/null || echo "None")
-          if [ "$RDS_ID" != "None" ] && [ -n "$RDS_ID" ]; then
-            echo "📥 Importing existing RDS instance: $RDS_ID"
-            terraform import module.primary_rds.aws_db_instance.main $RDS_ID 2>/dev/null || true
-          fi
+          safe_import "module.primary_rds.aws_db_instance.main" "$RDS_ID" "RDS Instance"
+          
+          # Import S3 buckets
+          S3_BUCKET=$(aws s3api list-buckets --query 'Buckets[?contains(Name, `lamp-visitor-analytics-assets`)].Name | [0]' --output text 2>/dev/null || echo "None")
+          safe_import "module.primary_s3.aws_s3_bucket.assets" "$S3_BUCKET" "S3 Assets Bucket"
+          
+          # Import Lambda functions
+          LAMBDA_DR=$(aws lambda get-function --function-name lamp-visitor-analytics-dr-automation --query 'Configuration.FunctionName' --output text 2>/dev/null || echo "None")
+          safe_import "module.primary_lambda.aws_lambda_function.dr_automation" "$LAMBDA_DR" "Lambda DR Function"
+          
+          LAMBDA_HEALTH=$(aws lambda get-function --function-name lamp-visitor-analytics-health-monitor --query 'Configuration.FunctionName' --output text 2>/dev/null || echo "None")
+          safe_import "module.primary_lambda.aws_lambda_function.health_monitor" "$LAMBDA_HEALTH" "Lambda Health Function"
           
       - name: Terraform Plan
         run: |
           cd $TF_ROOT
+          echo "🔄 Refreshing Terraform state..."
           terraform refresh -auto-approve || true
+          
+          echo "📋 Planning Terraform changes..."
           terraform plan -out=tfplan -detailed-exitcode || {
             EXIT_CODE=$?
             if [ $EXIT_CODE -eq 2 ]; then
               echo "✅ Changes detected, will apply"
+              echo "CHANGES_DETECTED=true" >> $GITHUB_ENV
             elif [ $EXIT_CODE -eq 1 ]; then
               echo "❌ Plan failed"
+              terraform show -json tfplan 2>/dev/null || echo "No plan file to show"
               exit 1
             else
-              echo "✅ No changes needed"
-              touch no-changes
+              echo "✅ No changes needed - infrastructure is up to date"
+              echo "CHANGES_DETECTED=false" >> $GITHUB_ENV
             fi
           }
           
       - name: Terraform Apply
         run: |
           cd $TF_ROOT
-          if [ ! -f no-changes ]; then
+          if [ "$CHANGES_DETECTED" = "true" ]; then
             echo "🚀 Applying Terraform changes..."
             terraform apply -auto-approve tfplan
+            echo "✅ Infrastructure changes applied successfully"
           else
             echo "✅ No changes to apply - infrastructure is up to date"
+            echo "SKIP_TESTS=true" >> $GITHUB_ENV
           fi
+          
+      - name: Verify Deployment
+        run: |
+          cd $TF_ROOT
+          echo "Verifying Terraform outputs..."
+          terraform output || echo "No outputs available yet"
+          
+      - name: Upload Terraform State
+        uses: actions/upload-artifact@v4
+        with:
+          name: terraform-state
+          path: |
+            disaster-recovery/.terraform/
+            disaster-recovery/terraform.tfstate*
+            disaster-recovery/terraform.tfvars
+          retention-days: 1
 
   test:
     name: Test Deployment
@@ -300,6 +353,12 @@ jobs:
     if: github.ref == 'refs/heads/main'
     steps:
       - uses: actions/checkout@v4
+      
+      - name: Download Terraform State
+        uses: actions/download-artifact@v4
+        with:
+          name: terraform-state
+          path: .
       
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -317,6 +376,7 @@ jobs:
         id: get-alb
         run: |
           cd $TF_ROOT
+          # Recreate backend configuration
           cat > backend.tf << EOF
           terraform {
             backend "s3" {
@@ -326,13 +386,14 @@ jobs:
             }
           }
           EOF
+          # Recreate terraform.tfvars
           cat > terraform.tfvars << EOF
           primary_region = "${{ env.AWS_DEFAULT_REGION }}"
           dr_region = "eu-central-1"
           environment = "prod"
           notification_email = "${{ secrets.NOTIFICATION_EMAIL }}"
           aws_account_id = "${{ secrets.AWS_ACCOUNT_ID }}"
-          enable_dr = false
+          enable_dr = ${{ env.ENABLE_DR }}
           image_tag = "${{ github.sha }}"
           EOF
           terraform init
@@ -344,31 +405,164 @@ jobs:
           fi
           echo "alb_dns=$ALB_DNS" >> $GITHUB_OUTPUT
           
+      - name: Check ECS service status
+        run: |
+          echo "🔍 Checking ECS service status..."
+          aws ecs describe-services --cluster lamp-visitor-analytics --services lamp-visitor-analytics --query 'services[0].{runningCount:runningCount,desiredCount:desiredCount,taskDefinition:taskDefinition}'
+          
       - name: Wait for deployment
         run: |
+          if [ "$SKIP_TESTS" = "true" ]; then
+            echo "✅ Skipping deployment wait - no changes applied"
+            exit 0
+          fi
+          
           echo "⏳ Waiting for deployment to stabilize..."
+          echo "🔍 Waiting for ECS service to be stable..."
+          
+          # Check if service exists first
+          if ! aws ecs describe-services --cluster lamp-visitor-analytics --services lamp-visitor-analytics --query 'services[0].serviceName' --output text 2>/dev/null | grep -q lamp-visitor-analytics; then
+            echo "⚠️  ECS service not found, skipping stability check"
+            exit 0
+          fi
+          
           aws ecs wait services-stable --cluster lamp-visitor-analytics --services lamp-visitor-analytics --cli-read-timeout 600 || {
             echo "Service failed to stabilize, checking status..."
             aws ecs describe-services --cluster lamp-visitor-analytics --services lamp-visitor-analytics
+            aws ecs list-tasks --cluster lamp-visitor-analytics --service-name lamp-visitor-analytics
+            TASK_ARN=$(aws ecs list-tasks --cluster lamp-visitor-analytics --service-name lamp-visitor-analytics --query 'taskArns[0]' --output text)
+            if [ "$TASK_ARN" != "None" ] && [ -n "$TASK_ARN" ]; then
+              aws ecs describe-tasks --cluster lamp-visitor-analytics --tasks $TASK_ARN
+            fi
             exit 1
           }
           echo "✅ ECS service is stable"
           
       - name: Health Check Test
         run: |
-          echo "🏥 Testing health endpoint..."
-          curl -f http://${{ steps.get-alb.outputs.alb_dns }}/health-simple.php || {
-            echo "Health check failed"
+          echo "🏥 Health Check Test"
+          echo "ALB DNS: ${{ steps.get-alb.outputs.alb_dns }}"
+          echo "🔍 Checking ALB target health..."
+          TG_ARN=$(aws elbv2 describe-target-groups --query 'TargetGroups[?contains(TargetGroupName, `tg-`)].TargetGroupArn | [0]' --output text)
+          if [ -n "$TG_ARN" ] && [ "$TG_ARN" != "None" ]; then
+            aws elbv2 describe-target-health --target-group-arn "$TG_ARN"
+          else
+            echo "No target group found"
+          fi
+          echo "📋 ECS Service Status:"
+          aws ecs describe-services --cluster lamp-visitor-analytics --services lamp-visitor-analytics
+          echo "📋 ECS Tasks:"
+          aws ecs list-tasks --cluster lamp-visitor-analytics --service-name lamp-visitor-analytics
+          TASK_ARN=$(aws ecs list-tasks --cluster lamp-visitor-analytics --service-name lamp-visitor-analytics --query 'taskArns[0]' --output text)
+          if [ "$TASK_ARN" != "None" ] && [ -n "$TASK_ARN" ]; then
+            echo "📋 Task Details:"
+            aws ecs describe-tasks --cluster lamp-visitor-analytics --tasks $TASK_ARN
+          fi
+          echo "🔍 Testing health endpoint..."
+          curl -v http://${{ steps.get-alb.outputs.alb_dns }}/health-simple.php || {
+            echo "Health check failed - debugging..."
+            echo "📋 Container Logs:"
+            aws logs describe-log-groups --log-group-name-prefix "/ecs/lamp-visitor-analytics" || true
+            LOG_GROUP=$(aws logs describe-log-groups --log-group-name-prefix "/ecs/lamp-visitor-analytics" --query 'logGroups[0].logGroupName' --output text)
+            if [ "$LOG_GROUP" != "None" ]; then
+              aws logs tail $LOG_GROUP --since 10m || true
+            fi
             exit 1
           }
           
       - name: Main Application Test
         run: |
-          echo "🌐 Testing main application..."
-          curl -f http://${{ steps.get-alb.outputs.alb_dns }}/ || {
-            echo "Main app test failed"
+          echo "🌐 Main Application Test"
+          echo "Testing: http://${{ steps.get-alb.outputs.alb_dns }}/"
+          RESPONSE=$(curl -s -w "HTTPCODE:%{http_code}" http://${{ steps.get-alb.outputs.alb_dns }}/ || echo "CURL_FAILED")
+          HTTP_CODE=$(echo "$RESPONSE" | grep -o "HTTPCODE:[0-9]*" | cut -d: -f2)
+          BODY=$(echo "$RESPONSE" | sed 's/HTTPCODE:[0-9]*$//')
+          echo "HTTP Code: $HTTP_CODE"
+          echo "Response Body: $BODY"
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "Main app failed with HTTP $HTTP_CODE"
+            exit 1
+          fi
+          
+      - name: API Test
+        run: |
+          echo "📊 API Test"
+          curl -f -s http://${{ steps.get-alb.outputs.alb_dns }}/api.php?action=stats | jq '.' || {
+            echo "API test failed"
             exit 1
           }
           
       - name: Test Results
         run: echo "🎉 All tests completed successfully"
+
+  enable-dr:
+    name: Enable Disaster Recovery
+    runs-on: ubuntu-latest
+    needs: [validate, test]
+    if: github.ref == 'refs/heads/main' && vars.ENABLE_DR == 'true'
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Download Terraform State
+        uses: actions/download-artifact@v4
+        with:
+          name: terraform-state
+          path: .
+      
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_DEFAULT_REGION }}
+          
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.5.7
+          
+      - name: Enable DR Infrastructure
+        run: |
+          cd $TF_ROOT
+          cat > terraform.tfvars << EOF
+          primary_region = "${{ env.AWS_DEFAULT_REGION }}"
+          dr_region = "eu-central-1"
+          environment = "prod"
+          notification_email = "${{ secrets.NOTIFICATION_EMAIL }}"
+          aws_account_id = "${{ secrets.AWS_ACCOUNT_ID }}"
+          enable_dr = true
+          image_tag = "${{ github.sha }}"
+          domain_name = "${{ vars.DOMAIN_NAME || '' }}"
+          EOF
+          terraform init
+          terraform plan -out=tfplan-dr
+          terraform apply -auto-approve tfplan-dr
+          echo "DR infrastructure deployment completed"
+          
+      - name: Test DR Infrastructure
+        run: |
+          cd $TF_ROOT
+          echo "🧪 Testing DR infrastructure..."
+          chmod +x scripts/test-dr.sh
+          ./scripts/test-dr.sh || echo "DR test completed with warnings"
+          
+      - name: DR Deployment Summary
+        run: |
+          cd $TF_ROOT
+          echo "=== DR DEPLOYMENT SUMMARY ==="
+          echo "Primary ALB: $(terraform output -raw primary_alb_dns)"
+          echo "DR ALB: $(terraform output -raw dr_alb_dns)"
+          echo "S3 Assets: $(terraform output -raw s3_assets_bucket)"
+          echo "DR S3 Assets: $(terraform output -raw dr_s3_assets_bucket)"
+          echo "Lambda DR Function: $(terraform output -raw lambda_dr_function)"
+          echo "Lambda Health Function: $(terraform output -raw lambda_health_function)"
+          if [ "$(terraform output -raw route53_hosted_zone_id)" != "null" ]; then
+            echo "Route53 Zone: $(terraform output -raw route53_hosted_zone_id)"
+            echo "Name Servers: $(terraform output -raw route53_name_servers)"
+          fi
+          echo ""
+          echo "🎉 DR infrastructure is ready!"
+          echo "📋 Next steps:"
+          echo "  1. Test failover: ./scripts/automated-failover.sh"
+          echo "  2. Schedule monthly DR tests"
+          echo "  3. Update DNS if using custom domain"

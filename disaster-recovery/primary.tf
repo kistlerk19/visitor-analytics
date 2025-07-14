@@ -78,6 +78,19 @@ module "primary_rds" {
   tags                     = local.common_tags
 }
 
+module "primary_s3" {
+  source = "./modules/s3"
+
+  providers = {
+    aws    = aws.primary
+    aws.dr = aws.dr
+  }
+
+  project_name = local.project_name
+  enable_dr    = var.enable_dr
+  tags         = local.common_tags
+}
+
 module "primary_ecs" {
   source = "./modules/ecs"
 
@@ -100,4 +113,39 @@ module "primary_ecs" {
   desired_count         = 2
   image_tag             = var.image_tag
   tags                  = local.common_tags
+}
+
+module "primary_lambda" {
+  source = "./modules/lambda"
+
+  providers = {
+    aws    = aws.primary
+    aws.dr = aws.dr
+  }
+
+  project_name       = local.project_name
+  enable_dr          = var.enable_dr
+  primary_region     = var.primary_region
+  dr_region          = var.dr_region
+  primary_alb_dns    = module.primary_ecs.alb_dns_name
+  dr_alb_dns         = var.enable_dr ? module.dr_ecs[0].alb_dns_name : ""
+  notification_email = var.notification_email
+  tags               = local.common_tags
+}
+
+module "primary_route53" {
+  source = "./modules/route53"
+
+  providers = {
+    aws = aws.primary
+  }
+
+  project_name    = local.project_name
+  domain_name     = var.domain_name
+  enable_dr       = var.enable_dr
+  primary_region  = var.primary_region
+  primary_alb_dns = module.primary_ecs.alb_dns_name
+  dr_alb_dns      = var.enable_dr ? module.dr_ecs[0].alb_dns_name : ""
+  sns_topic_arn   = module.primary_lambda.sns_topic_arn
+  tags            = local.common_tags
 }

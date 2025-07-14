@@ -37,3 +37,9 @@ variable "image_tag" {
   type        = string
   default     = "latest"
 }
+
+variable "domain_name" {
+  description = "Domain name for the application (optional)"
+  type        = string
+  default     = ""
+}
