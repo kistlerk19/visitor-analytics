@@ -48,7 +48,7 @@ resource "aws_s3_bucket_versioning" "assets_dr" {
 # Cross-region replication configuration
 resource "aws_s3_bucket_replication_configuration" "assets" {
   count      = var.enable_dr ? 1 : 0
-  depends_on = [aws_s3_bucket_versioning.assets]
+  depends_on = [aws_s3_bucket_versioning.assets, aws_s3_bucket_versioning.assets_dr]
   role       = aws_iam_role.replication[0].arn
   bucket     = aws_s3_bucket.assets.id
 

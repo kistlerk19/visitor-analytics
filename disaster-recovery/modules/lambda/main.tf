@@ -105,7 +105,7 @@ resource "aws_iam_role" "lambda_role" {
 resource "aws_iam_role" "dr_lambda_role" {
   count    = var.enable_dr ? 1 : 0
   provider = aws.dr
-  name     = "${var.project_name}-lambda-role"
+  name     = "${var.project_name}-lambda-role-dr"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
