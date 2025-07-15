@@ -32,6 +32,12 @@ variable "enable_dr" {
   default     = false
 }
 
+variable "dr_killswitch" {
+  description = "Emergency DR killswitch - scales primary to 0 and DR to 2"
+  type        = bool
+  default     = false
+}
+
 variable "image_tag" {
   description = "Docker image tag"
   type        = string

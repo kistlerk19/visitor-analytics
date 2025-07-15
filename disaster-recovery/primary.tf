@@ -110,7 +110,7 @@ module "primary_ecs" {
   db_password           = module.primary_secrets.db_password
   secret_arn            = module.primary_secrets.secret_arn
   aws_region            = var.primary_region
-  desired_count         = 2
+  desired_count         = var.dr_killswitch ? 0 : 2
   image_tag             = var.image_tag
   tags                  = local.common_tags
 }

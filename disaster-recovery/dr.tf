@@ -74,6 +74,6 @@ module "dr_ecs" {
   db_password           = module.primary_secrets.db_password
   secret_arn            = var.enable_dr ? module.primary_secrets.dr_secret_arn : module.primary_secrets.secret_arn
   aws_region            = var.dr_region
-  desired_count         = 0 # Pilot light - scaled to 0
+  desired_count         = var.dr_killswitch ? 2 : 0 # Activate when killswitch enabled
   tags                  = local.common_tags
 }
