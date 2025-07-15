@@ -21,10 +21,10 @@
 curl -f http://$(terraform output -raw primary_alb_dns)/health-simple.php
 
 # Check ECS service status
-aws ecs describe-services --cluster lamp-visitor-analytics --services lamp-visitor-analytics --region eu-west-1
+aws ecs describe-services --cluster visitor-analytics --services visitor-analytics --region eu-west-1
 
 # Check RDS status
-aws rds describe-db-instances --region eu-west-1 --query 'DBInstances[?contains(DBInstanceIdentifier, `lamp-visitor-analytics`)].DBInstanceStatus'
+aws rds describe-db-instances --region eu-west-1 --query 'DBInstances[?contains(DBInstanceIdentifier, `visitor-analytics`)].DBInstanceStatus'
 ```
 
 #### 3. Escalation Decision Matrix
@@ -57,7 +57,7 @@ cd /path/to/visitor-analytics/disaster-recovery
 ```bash
 # Trigger via AWS CLI
 aws lambda invoke \
-    --function-name lamp-visitor-analytics-dr-automation \
+    --function-name visitor-analytics-dr-automation \
     --region eu-west-1 \
     --payload '{"trigger":"manual","reason":"disaster_recovery"}' \
     response.json
@@ -80,7 +80,7 @@ curl -f "http://$DR_ALB/api.php?action=stats"
 ```bash
 # Check promoted database
 aws rds describe-db-instances \
-    --db-instance-identifier lamp-visitor-analytics-db-replica \
+    --db-instance-identifier visitor-analytics-db-replica \
     --region eu-central-1 \
     --query 'DBInstances[0].{Status:DBInstanceStatus,Endpoint:Endpoint.Address}'
 ```
@@ -153,13 +153,13 @@ We apologize for any inconvenience.
 **Issue: ECS Tasks Not Starting in DR Region**
 ```bash
 # Check task definition
-aws ecs describe-task-definition --task-definition lamp-visitor-analytics --region eu-central-1
+aws ecs describe-task-definition --task-definition visitor-analytics --region eu-central-1
 
 # Check service events
-aws ecs describe-services --cluster lamp-visitor-analytics --services lamp-visitor-analytics --region eu-central-1 --query 'services[0].events'
+aws ecs describe-services --cluster visitor-analytics --services visitor-analytics --region eu-central-1 --query 'services[0].events'
 
 # Check container logs
-aws logs tail /ecs/lamp-visitor-analytics --region eu-central-1 --follow
+aws logs tail /ecs/visitor-analytics --region eu-central-1 --follow
 ```
 
 **Issue: Database Connection Failures**
@@ -171,7 +171,7 @@ aws rds describe-db-instances --region eu-central-1 --query 'DBInstances[?contai
 aws ec2 describe-security-groups --region eu-central-1 --filters "Name=group-name,Values=*rds*"
 
 # Test database connectivity from ECS task
-aws ecs execute-command --cluster lamp-visitor-analytics --task [TASK-ARN] --container apache --command "/bin/bash" --interactive --region eu-central-1
+aws ecs execute-command --cluster visitor-analytics --task [TASK-ARN] --container apache --command "/bin/bash" --interactive --region eu-central-1
 ```
 
 **Issue: Health Checks Failing**

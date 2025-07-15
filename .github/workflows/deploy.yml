@@ -78,12 +78,12 @@ jobs:
           image_tag = "${{ github.sha }}"
           EOF
           # Create S3 bucket for state
-          aws s3 mb s3://lamp-visitor-analytics-terraform-state-${{ secrets.AWS_ACCOUNT_ID }} --region ${{ env.AWS_DEFAULT_REGION }} 2>/dev/null || true
+          aws s3 mb s3://visitor-analytics-terraform-state-${{ secrets.AWS_ACCOUNT_ID }} --region ${{ env.AWS_DEFAULT_REGION }} 2>/dev/null || true
           # Create backend configuration
           cat > backend.tf << EOF
           terraform {
             backend "s3" {
-              bucket = "lamp-visitor-analytics-terraform-state-${{ secrets.AWS_ACCOUNT_ID }}"
+              bucket = "visitor-analytics-terraform-state-${{ secrets.AWS_ACCOUNT_ID }}"
               key    = "terraform.tfstate"
               region = "${{ env.AWS_DEFAULT_REGION }}"
             }
@@ -145,7 +145,7 @@ jobs:
           cat > backend.tf << EOF
           terraform {
             backend "s3" {
-              bucket = "lamp-visitor-analytics-terraform-state-${{ secrets.AWS_ACCOUNT_ID }}"
+              bucket = "visitor-analytics-terraform-state-${{ secrets.AWS_ACCOUNT_ID }}"
               key    = "terraform.tfstate"
               region = "${{ env.AWS_DEFAULT_REGION }}"
             }
@@ -181,26 +181,26 @@ jobs:
         run: |
           echo "🔍 Checking for existing ECS services..."
           # Stop all tasks first
-          TASK_ARNS=$(aws ecs list-tasks --cluster lamp-visitor-analytics --service-name lamp-visitor-analytics --query 'taskArns[]' --output text 2>/dev/null || echo "")
+          TASK_ARNS=$(aws ecs list-tasks --cluster visitor-analytics --service-name visitor-analytics --query 'taskArns[]' --output text 2>/dev/null || echo "")
           if [ -n "$TASK_ARNS" ]; then
             echo "🛑 Stopping all tasks..."
             for task in $TASK_ARNS; do
-              aws ecs stop-task --cluster lamp-visitor-analytics --task $task 2>/dev/null || true
+              aws ecs stop-task --cluster visitor-analytics --task $task 2>/dev/null || true
             done
           fi
           
           # Scale service to 0 and delete
-          if aws ecs describe-services --cluster lamp-visitor-analytics --services lamp-visitor-analytics 2>/dev/null | grep -q "serviceName"; then
+          if aws ecs describe-services --cluster visitor-analytics --services visitor-analytics 2>/dev/null | grep -q "serviceName"; then
             echo "⏳ Scaling down service to 0..."
-            aws ecs update-service --cluster lamp-visitor-analytics --service lamp-visitor-analytics --desired-count 0 2>/dev/null || true
+            aws ecs update-service --cluster visitor-analytics --service visitor-analytics --desired-count 0 2>/dev/null || true
             sleep 30
             echo "🗑️ Force deleting service..."
-            aws ecs delete-service --cluster lamp-visitor-analytics --service lamp-visitor-analytics --force 2>/dev/null || true
+            aws ecs delete-service --cluster visitor-analytics --service visitor-analytics --force 2>/dev/null || true
             
             # Wait for complete deletion
             echo "⏳ Waiting for service deletion..."
             for i in {1..30}; do
-              if ! aws ecs describe-services --cluster lamp-visitor-analytics --services lamp-visitor-analytics 2>/dev/null | grep -q "serviceName"; then
+              if ! aws ecs describe-services --cluster visitor-analytics --services visitor-analytics 2>/dev/null | grep -q "serviceName"; then
                 echo "✅ Service deleted successfully"
                 break
               fi
@@ -211,7 +211,7 @@ jobs:
           
           # Clean up any remaining task definitions
           echo "🧹 Cleaning up old task definitions..."
-          aws ecs list-task-definitions --family-prefix lamp-visitor-analytics --status ACTIVE --query 'taskDefinitionArns[:-1]' --output text | xargs -r -n1 aws ecs deregister-task-definition --task-definition 2>/dev/null || true
+          aws ecs list-task-definitions --family-prefix visitor-analytics --status ACTIVE --query 'taskDefinitionArns[:-1]' --output text | xargs -r -n1 aws ecs deregister-task-definition --task-definition 2>/dev/null || true
           
       - name: Create terraform.tfvars
         run: |
@@ -228,8 +228,8 @@ jobs:
           
       - name: Create S3 bucket for state
         run: |
-          aws s3 mb s3://lamp-visitor-analytics-terraform-state-${{ secrets.AWS_ACCOUNT_ID }} --region ${{ env.AWS_DEFAULT_REGION }} 2>/dev/null || true
-          aws s3api put-bucket-versioning --bucket lamp-visitor-analytics-terraform-state-${{ secrets.AWS_ACCOUNT_ID }} --versioning-configuration Status=Enabled 2>/dev/null || true
+          aws s3 mb s3://visitor-analytics-terraform-state-${{ secrets.AWS_ACCOUNT_ID }} --region ${{ env.AWS_DEFAULT_REGION }} 2>/dev/null || true
+          aws s3api put-bucket-versioning --bucket visitor-analytics-terraform-state-${{ secrets.AWS_ACCOUNT_ID }} --versioning-configuration Status=Enabled 2>/dev/null || true
           
       - name: Update backend configuration
         run: |
@@ -237,7 +237,7 @@ jobs:
           cat > backend.tf << EOF
           terraform {
             backend "s3" {
-              bucket = "lamp-visitor-analytics-terraform-state-${{ secrets.AWS_ACCOUNT_ID }}"
+              bucket = "visitor-analytics-terraform-state-${{ secrets.AWS_ACCOUNT_ID }}"
               key    = "terraform.tfstate"
               region = "${{ env.AWS_DEFAULT_REGION }}"
             }
@@ -269,7 +269,7 @@ jobs:
           }
           
           # Import Primary VPC and networking
-          VPC_ID=$(aws ec2 describe-vpcs --filters "Name=tag:Name,Values=lamp-visitor-analytics-vpc" --query 'Vpcs[0].VpcId' --output text 2>/dev/null || echo "None")
+          VPC_ID=$(aws ec2 describe-vpcs --filters "Name=tag:Name,Values=visitor-analytics-vpc" --query 'Vpcs[0].VpcId' --output text 2>/dev/null || echo "None")
           safe_import "module.primary_networking.aws_vpc.main" "$VPC_ID" "Primary VPC"
           
           # Import subnets
@@ -291,14 +291,14 @@ jobs:
           safe_import "module.primary_networking.aws_nat_gateway.main[0]" "$NAT_ID" "NAT Gateway"
           
           # Import DR VPC if exists
-          DR_VPC_ID=$(aws ec2 describe-vpcs --filters "Name=tag:Name,Values=lamp-visitor-analytics-vpc" --query 'Vpcs[0].VpcId' --output text --region eu-central-1 2>/dev/null || echo "None")
+          DR_VPC_ID=$(aws ec2 describe-vpcs --filters "Name=tag:Name,Values=visitor-analytics-vpc" --query 'Vpcs[0].VpcId' --output text --region eu-central-1 2>/dev/null || echo "None")
           if [ "$DR_VPC_ID" != "None" ]; then
             safe_import "module.dr_networking[0].aws_vpc.main" "$DR_VPC_ID" "DR VPC"
           fi
           
           # Import ECS cluster
-          if aws ecs describe-clusters --clusters lamp-visitor-analytics 2>/dev/null | grep -q "clusterName"; then
-            safe_import "module.primary_ecs.aws_ecs_cluster.main" "lamp-visitor-analytics" "ECS Cluster"
+          if aws ecs describe-clusters --clusters visitor-analytics 2>/dev/null | grep -q "clusterName"; then
+            safe_import "module.primary_ecs.aws_ecs_cluster.main" "visitor-analytics" "ECS Cluster"
           fi
           
           # Import ALB
@@ -306,18 +306,18 @@ jobs:
           safe_import "module.primary_ecs.aws_lb.main" "$ALB_ARN" "ALB"
           
           # Import RDS
-          RDS_ID=$(aws rds describe-db-instances --query 'DBInstances[?contains(DBInstanceIdentifier, `lamp-visitor-analytics-db`)].DBInstanceIdentifier | [0]' --output text 2>/dev/null || echo "None")
+          RDS_ID=$(aws rds describe-db-instances --query 'DBInstances[?contains(DBInstanceIdentifier, `visitor-analytics-db`)].DBInstanceIdentifier | [0]' --output text 2>/dev/null || echo "None")
           safe_import "module.primary_rds.aws_db_instance.main" "$RDS_ID" "RDS Instance"
           
           # Import S3 buckets
-          S3_BUCKET=$(aws s3api list-buckets --query 'Buckets[?contains(Name, `lamp-visitor-analytics-assets`)].Name | [0]' --output text 2>/dev/null || echo "None")
+          S3_BUCKET=$(aws s3api list-buckets --query 'Buckets[?contains(Name, `visitor-analytics-assets`)].Name | [0]' --output text 2>/dev/null || echo "None")
           safe_import "module.primary_s3.aws_s3_bucket.assets" "$S3_BUCKET" "S3 Assets Bucket"
           
           # Import Lambda functions
-          LAMBDA_DR=$(aws lambda get-function --function-name lamp-visitor-analytics-dr-automation --query 'Configuration.FunctionName' --output text 2>/dev/null || echo "None")
+          LAMBDA_DR=$(aws lambda get-function --function-name visitor-analytics-dr-automation --query 'Configuration.FunctionName' --output text 2>/dev/null || echo "None")
           safe_import "module.primary_lambda.aws_lambda_function.dr_automation" "$LAMBDA_DR" "Lambda DR Function"
           
-          LAMBDA_HEALTH=$(aws lambda get-function --function-name lamp-visitor-analytics-health-monitor --query 'Configuration.FunctionName' --output text 2>/dev/null || echo "None")
+          LAMBDA_HEALTH=$(aws lambda get-function --function-name visitor-analytics-health-monitor --query 'Configuration.FunctionName' --output text 2>/dev/null || echo "None")
           safe_import "module.primary_lambda.aws_lambda_function.health_monitor" "$LAMBDA_HEALTH" "Lambda Health Function"
           
       - name: Terraform Plan
@@ -404,7 +404,7 @@ jobs:
           cat > backend.tf << EOF
           terraform {
             backend "s3" {
-              bucket = "lamp-visitor-analytics-terraform-state-${{ secrets.AWS_ACCOUNT_ID }}"
+              bucket = "visitor-analytics-terraform-state-${{ secrets.AWS_ACCOUNT_ID }}"
               key    = "terraform.tfstate"
               region = "${{ env.AWS_DEFAULT_REGION }}"
             }
@@ -432,7 +432,7 @@ jobs:
       - name: Check ECS service status
         run: |
           echo "🔍 Checking ECS service status..."
-          aws ecs describe-services --cluster lamp-visitor-analytics --services lamp-visitor-analytics --query 'services[0].{runningCount:runningCount,desiredCount:desiredCount,taskDefinition:taskDefinition}'
+          aws ecs describe-services --cluster visitor-analytics --services visitor-analytics --query 'services[0].{runningCount:runningCount,desiredCount:desiredCount,taskDefinition:taskDefinition}'
           
       - name: Wait for deployment
         run: |
@@ -444,7 +444,7 @@ jobs:
           echo "⏳ Waiting for deployment to stabilize..."
           
           # Check service status
-          SERVICE_INFO=$(aws ecs describe-services --cluster lamp-visitor-analytics --services lamp-visitor-analytics --query 'services[0].{desiredCount:desiredCount,status:status}' --output json 2>/dev/null || echo '{"desiredCount":0,"status":"MISSING"}')
+          SERVICE_INFO=$(aws ecs describe-services --cluster visitor-analytics --services visitor-analytics --query 'services[0].{desiredCount:desiredCount,status:status}' --output json 2>/dev/null || echo '{"desiredCount":0,"status":"MISSING"}')
           DESIRED_COUNT=$(echo $SERVICE_INFO | jq -r '.desiredCount // 0')
           SERVICE_STATUS=$(echo $SERVICE_INFO | jq -r '.status // "MISSING"')
           
@@ -458,7 +458,7 @@ jobs:
           
           if [ "$SERVICE_STATUS" = "ACTIVE" ] && [ "$DESIRED_COUNT" -gt "0" ]; then
             echo "🔍 Waiting for ECS service to be stable..."
-            aws ecs wait services-stable --cluster lamp-visitor-analytics --services lamp-visitor-analytics --cli-read-timeout 300 || {
+            aws ecs wait services-stable --cluster visitor-analytics --services visitor-analytics --cli-read-timeout 300 || {
               echo "Service failed to stabilize, but continuing..."
             }
           fi
@@ -471,11 +471,11 @@ jobs:
           echo "ALB DNS: ${{ steps.get-alb.outputs.alb_dns }}"
           
           # Find the actual service name
-          SERVICE_NAME=$(aws ecs list-services --cluster lamp-visitor-analytics --query 'serviceArns[0]' --output text | cut -d'/' -f3 2>/dev/null || echo "lamp-visitor-analytics")
+          SERVICE_NAME=$(aws ecs list-services --cluster visitor-analytics --query 'serviceArns[0]' --output text | cut -d'/' -f3 2>/dev/null || echo "visitor-analytics")
           echo "Service name: $SERVICE_NAME"
           
           # Check if service has running tasks
-          RUNNING_COUNT=$(aws ecs describe-services --cluster lamp-visitor-analytics --services "$SERVICE_NAME" --query 'services[0].runningCount' --output text 2>/dev/null || echo "0")
+          RUNNING_COUNT=$(aws ecs describe-services --cluster visitor-analytics --services "$SERVICE_NAME" --query 'services[0].runningCount' --output text 2>/dev/null || echo "0")
           
           if [ "$RUNNING_COUNT" = "0" ]; then
             echo "⚠️  No running tasks - service is scaled to 0 (DR setup)"
@@ -486,7 +486,7 @@ jobs:
           echo "🔍 Testing health endpoint..."
           curl -f http://${{ steps.get-alb.outputs.alb_dns }}/health-simple.php || {
             echo "Health check failed - service may still be starting"
-            aws ecs describe-services --cluster lamp-visitor-analytics --services "$SERVICE_NAME"
+            aws ecs describe-services --cluster visitor-analytics --services "$SERVICE_NAME"
             exit 1
           }
           echo "✅ Health check passed"
@@ -496,10 +496,10 @@ jobs:
           echo "🌐 Main Application Test"
           
           # Find the actual service name
-          SERVICE_NAME=$(aws ecs list-services --cluster lamp-visitor-analytics --query 'serviceArns[0]' --output text | cut -d'/' -f3 2>/dev/null || echo "lamp-visitor-analytics")
+          SERVICE_NAME=$(aws ecs list-services --cluster visitor-analytics --query 'serviceArns[0]' --output text | cut -d'/' -f3 2>/dev/null || echo "visitor-analytics")
           
           # Check if service has running tasks
-          RUNNING_COUNT=$(aws ecs describe-services --cluster lamp-visitor-analytics --services "$SERVICE_NAME" --query 'services[0].runningCount' --output text 2>/dev/null || echo "0")
+          RUNNING_COUNT=$(aws ecs describe-services --cluster visitor-analytics --services "$SERVICE_NAME" --query 'services[0].runningCount' --output text 2>/dev/null || echo "0")
           
           if [ "$RUNNING_COUNT" = "0" ]; then
             echo "⚠️  Skipping application test - no running tasks (DR setup)"
@@ -519,7 +519,7 @@ jobs:
           echo "📊 API Test"
           
           # Check if service has running tasks
-          RUNNING_COUNT=$(aws ecs describe-services --cluster lamp-visitor-analytics --services lamp-visitor-analytics --query 'services[0].runningCount' --output text 2>/dev/null || echo "0")
+          RUNNING_COUNT=$(aws ecs describe-services --cluster visitor-analytics --services visitor-analytics --query 'services[0].runningCount' --output text 2>/dev/null || echo "0")
           
           if [ "$RUNNING_COUNT" = "0" ]; then
             echo "⚠️  Skipping API test - no running tasks (DR setup)"

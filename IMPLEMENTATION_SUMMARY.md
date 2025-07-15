@@ -189,7 +189,7 @@ terraform apply
 ./scripts/test-dr.sh
 
 # Check logs
-aws logs tail /ecs/lamp-visitor-analytics --region eu-central-1
+aws logs tail /ecs/visitor-analytics --region eu-central-1
 ```
 
 ## 📞 Support

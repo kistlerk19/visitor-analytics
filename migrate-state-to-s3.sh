@@ -16,7 +16,7 @@ fi
 
 # Get AWS account ID
 AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-BUCKET_NAME="lamp-visitor-analytics-terraform-state-$AWS_ACCOUNT_ID"
+BUCKET_NAME="visitor-analytics-terraform-state-$AWS_ACCOUNT_ID"
 
 echo "🪣 Creating S3 bucket: $BUCKET_NAME"
 aws s3 mb s3://$BUCKET_NAME --region eu-west-1 2>/dev/null || echo "Bucket already exists"

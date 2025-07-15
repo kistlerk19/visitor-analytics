@@ -170,13 +170,13 @@ curl http://$(terraform output -raw dr_alb_dns)/health.php
 ### Debug Commands
 ```bash
 # Check RDS status
-aws rds describe-db-instances --db-instance-identifier lamp-visitor-analytics-db
+aws rds describe-db-instances --db-instance-identifier visitor-analytics-db
 
 # Check ECS service
-aws ecs describe-services --cluster lamp-visitor-analytics --services lamp-visitor-analytics
+aws ecs describe-services --cluster visitor-analytics --services visitor-analytics
 
 # View logs
-aws logs tail /ecs/lamp-visitor-analytics --follow
+aws logs tail /ecs/visitor-analytics --follow
 ```
 
 ## 📈 Next Steps

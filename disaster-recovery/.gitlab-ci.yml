@@ -7,7 +7,7 @@ stages:
 variables:
   AWS_DEFAULT_REGION: eu-west-1
   TF_ROOT: disaster-recovery
-  TF_STATE_NAME: lamp-visitor-analytics
+  TF_STATE_NAME: visitor-analytics
   ENABLE_DR: "false"  # Set to "true" to enable DR automatically
 
 validate:

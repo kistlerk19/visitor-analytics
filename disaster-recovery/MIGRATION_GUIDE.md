@@ -7,10 +7,10 @@ This guide helps you migrate from the existing ECS CLI deployment to the new Ter
 ### 1. Backup Current Infrastructure
 ```bash
 # Export current ECS service configuration
-aws ecs describe-services --cluster lamp-visitor-analytics --services lamp-visitor-analytics > current-service.json
+aws ecs describe-services --cluster visitor-analytics --services visitor-analytics > current-service.json
 
 # Export current task definition
-aws ecs describe-task-definition --task-definition lamp-visitor-analytics > current-task-def.json
+aws ecs describe-task-definition --task-definition visitor-analytics > current-task-def.json
 ```
 
 ### 2. Update GitLab CI
@@ -107,16 +107,16 @@ curl http://$(terraform output -raw primary_alb_dns)/health.php
    aws ec2 describe-security-groups --group-ids sg-xxxxx
    
    # Check secrets manager
-   aws secretsmanager get-secret-value --secret-id lamp-visitor-analytics-db-credentials
+   aws secretsmanager get-secret-value --secret-id visitor-analytics-db-credentials
    ```
 
 2. **ECS Tasks Not Starting**
    ```bash
    # Check task definition
-   aws ecs describe-task-definition --task-definition lamp-visitor-analytics
+   aws ecs describe-task-definition --task-definition visitor-analytics
    
    # Check service events
-   aws ecs describe-services --cluster lamp-visitor-analytics --services lamp-visitor-analytics
+   aws ecs describe-services --cluster visitor-analytics --services visitor-analytics
    ```
 
 3. **ALB Health Checks Failing**

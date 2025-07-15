@@ -7,15 +7,15 @@ echo "========================================"
 
 # Force ECS service update
 echo "🔄 Forcing ECS service update..."
-aws ecs update-service --cluster lamp-visitor-analytics --service lamp-visitor-analytics --force-new-deployment
+aws ecs update-service --cluster visitor-analytics --service visitor-analytics --force-new-deployment
 
 # Wait for deployment
 echo "⏳ Waiting for new deployment..."
-aws ecs wait services-stable --cluster lamp-visitor-analytics --services lamp-visitor-analytics
+aws ecs wait services-stable --cluster visitor-analytics --services visitor-analytics
 
 # Check service status
 echo "📊 Service Status:"
-aws ecs describe-services --cluster lamp-visitor-analytics --services lamp-visitor-analytics --query 'services[0].{runningCount:runningCount,desiredCount:desiredCount,status:status}'
+aws ecs describe-services --cluster visitor-analytics --services visitor-analytics --query 'services[0].{runningCount:runningCount,desiredCount:desiredCount,status:status}'
 
 # Get ALB DNS and test
 cd disaster-recovery

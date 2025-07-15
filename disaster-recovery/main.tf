@@ -23,7 +23,7 @@ provider "aws" {
 }
 
 locals {
-  project_name = "lamp-visitor-analytics"
+  project_name = "visitor-analytics"
   common_tags = {
     Project     = local.project_name
     Environment = var.environment

@@ -101,7 +101,7 @@ Secrets Manager Policy:
   Actions:
     - secretsmanager:GetSecretValue
   Resources:
-    - arn:aws:secretsmanager:*:*:secret:lamp-visitor-analytics-db-credentials*
+    - arn:aws:secretsmanager:*:*:secret:visitor-analytics-db-credentials*
 ```
 
 ### **Secrets Management**
@@ -357,7 +357,7 @@ RDS Metrics:
 ### **Log Specifications**
 ```yaml
 Application Logs:
-  Location: /ecs/lamp-visitor-analytics
+  Location: /ecs/visitor-analytics
   Retention: 3 days
   Format: Apache Combined Log Format
   

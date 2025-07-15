@@ -5,7 +5,7 @@ set -e
 echo "🧹 Cleaning up duplicate infrastructure"
 echo "======================================"
 
-echo "⚠️  This will delete ALL lamp-visitor-analytics resources"
+echo "⚠️  This will delete ALL visitor-analytics resources"
 read -p "Are you sure? Type 'DELETE ALL' to continue: " confirm
 
 if [ "$confirm" != "DELETE ALL" ]; then
@@ -15,19 +15,19 @@ fi
 
 echo "🗑️  Deleting ECS resources..."
 # Delete all ECS services
-aws ecs list-services --cluster lamp-visitor-analytics --query 'serviceArns[]' --output text | xargs -n1 -I {} aws ecs update-service --cluster lamp-visitor-analytics --service {} --desired-count 0 2>/dev/null || true
+aws ecs list-services --cluster visitor-analytics --query 'serviceArns[]' --output text | xargs -n1 -I {} aws ecs update-service --cluster visitor-analytics --service {} --desired-count 0 2>/dev/null || true
 sleep 30
-aws ecs list-services --cluster lamp-visitor-analytics --query 'serviceArns[]' --output text | xargs -n1 -I {} aws ecs delete-service --cluster lamp-visitor-analytics --service {} 2>/dev/null || true
+aws ecs list-services --cluster visitor-analytics --query 'serviceArns[]' --output text | xargs -n1 -I {} aws ecs delete-service --cluster visitor-analytics --service {} 2>/dev/null || true
 
 # Delete ECS clusters
-aws ecs list-clusters --query 'clusterArns[]' --output text | grep lamp-visitor-analytics | xargs -n1 -I {} aws ecs delete-cluster --cluster {} 2>/dev/null || true
+aws ecs list-clusters --query 'clusterArns[]' --output text | grep visitor-analytics | xargs -n1 -I {} aws ecs delete-cluster --cluster {} 2>/dev/null || true
 
 echo "🗑️  Deleting RDS instances..."
 # Delete RDS instances
-aws rds describe-db-instances --query 'DBInstances[?contains(DBInstanceIdentifier, `lamp-visitor-analytics`)].DBInstanceIdentifier' --output text | xargs -n1 -I {} aws rds delete-db-instance --db-instance-identifier {} --skip-final-snapshot 2>/dev/null || true
+aws rds describe-db-instances --query 'DBInstances[?contains(DBInstanceIdentifier, `visitor-analytics`)].DBInstanceIdentifier' --output text | xargs -n1 -I {} aws rds delete-db-instance --db-instance-identifier {} --skip-final-snapshot 2>/dev/null || true
 
 # Delete RDS replicas in DR region
-aws rds describe-db-instances --region eu-central-1 --query 'DBInstances[?contains(DBInstanceIdentifier, `lamp-visitor-analytics`)].DBInstanceIdentifier' --output text | xargs -n1 -I {} aws rds delete-db-instance --region eu-central-1 --db-instance-identifier {} --skip-final-snapshot 2>/dev/null || true
+aws rds describe-db-instances --region eu-central-1 --query 'DBInstances[?contains(DBInstanceIdentifier, `visitor-analytics`)].DBInstanceIdentifier' --output text | xargs -n1 -I {} aws rds delete-db-instance --region eu-central-1 --db-instance-identifier {} --skip-final-snapshot 2>/dev/null || true
 
 echo "🗑️  Deleting Load Balancers..."
 # Delete ALBs
@@ -73,7 +73,7 @@ aws ecr describe-repositories --query 'repositories[?contains(repositoryName, `l
 
 echo "🗑️  Deleting Secrets..."
 # Delete secrets
-aws secretsmanager list-secrets --query 'SecretList[?contains(Name, `lamp-visitor-analytics`)].Name' --output text | xargs -n1 -I {} aws secretsmanager delete-secret --secret-id {} --force-delete-without-recovery 2>/dev/null || true
+aws secretsmanager list-secrets --query 'SecretList[?contains(Name, `visitor-analytics`)].Name' --output text | xargs -n1 -I {} aws secretsmanager delete-secret --secret-id {} --force-delete-without-recovery 2>/dev/null || true
 
 echo "🗑️  Deleting CloudWatch logs..."
 # Delete log groups

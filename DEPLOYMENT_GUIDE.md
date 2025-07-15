@@ -18,7 +18,7 @@ ENABLE_DR = "true"                     # Set to "true" for DR
 ```bash
 # Clone/Fork repository
 git clone <repository-url>
-cd lamp-visitor-analytics
+cd visitor-analytics
 
 # Verify structure
 ls -la disaster-recovery/
@@ -65,7 +65,7 @@ Stage 4: Test        (3-5 min)  - Health checks & validation
 - ECS Service (2 tasks, auto-scaling 1-6)
 - Application Load Balancer
 - Target Group (health checks on /health.php)
-- CloudWatch Log Group (/ecs/lamp-visitor-analytics)
+- CloudWatch Log Group (/ecs/visitor-analytics)
 ```
 
 #### **3.3 Data Infrastructure**
@@ -204,27 +204,27 @@ cd disaster-recovery
 ```bash
 # Automatic process:
 aws rds promote-read-replica \
-  --db-instance-identifier lamp-visitor-analytics-db-replica \
+  --db-instance-identifier visitor-analytics-db-replica \
   --region eu-central-1
 
 # Wait for promotion (2-3 minutes)
 aws rds wait db-instance-available \
-  --db-instance-identifier lamp-visitor-analytics-db-replica
+  --db-instance-identifier visitor-analytics-db-replica
 ```
 
 #### **Step 3: Scale Up DR Application**
 ```bash
 # Scale ECS service from 0 to 2 tasks
 aws ecs update-service \
-  --cluster lamp-visitor-analytics \
-  --service lamp-visitor-analytics \
+  --cluster visitor-analytics \
+  --service visitor-analytics \
   --desired-count 2 \
   --region eu-central-1
 
 # Wait for service stability (2-3 minutes)
 aws ecs wait services-stable \
-  --cluster lamp-visitor-analytics \
-  --services lamp-visitor-analytics
+  --cluster visitor-analytics \
+  --services visitor-analytics
 ```
 
 #### **Step 4: Update DNS (Manual)**
@@ -247,7 +247,7 @@ terraform plan -var="enable_dr=true"
 
 # 2. Test read replica lag
 aws rds describe-db-instances \
-  --db-instance-identifier lamp-visitor-analytics-db-replica \
+  --db-instance-identifier visitor-analytics-db-replica \
   --query 'DBInstances[0].ReadReplicaDBInstanceIdentifiers'
 
 # 3. Test application in DR region
@@ -284,9 +284,9 @@ curl -f http://$DR_ALB/health.php
 ### **Log Aggregation**
 ```bash
 # Log locations:
-/ecs/lamp-visitor-analytics/apache/task-id
-/aws/rds/instance/lamp-visitor-analytics-db/error
-/aws/applicationloadbalancer/lamp-visitor-analytics-alb
+/ecs/visitor-analytics/apache/task-id
+/aws/rds/instance/visitor-analytics-db/error
+/aws/applicationloadbalancer/visitor-analytics-alb
 ```
 
 ### **Alerting Setup**
@@ -341,8 +341,8 @@ TOTAL WITH DR: ~$148.80/month
 #### **Issue 1: ECS Tasks Not Starting**
 ```bash
 # Diagnosis:
-aws ecs describe-services --cluster lamp-visitor-analytics --services lamp-visitor-analytics
-aws logs tail /ecs/lamp-visitor-analytics --follow
+aws ecs describe-services --cluster visitor-analytics --services visitor-analytics
+aws logs tail /ecs/visitor-analytics --follow
 
 # Common causes:
 - Secrets Manager permissions
@@ -360,8 +360,8 @@ aws logs tail /ecs/lamp-visitor-analytics --follow
 #### **Issue 2: Database Connection Failures**
 ```bash
 # Diagnosis:
-aws secretsmanager get-secret-value --secret-id lamp-visitor-analytics-db-credentials
-aws rds describe-db-instances --db-instance-identifier lamp-visitor-analytics-db
+aws secretsmanager get-secret-value --secret-id visitor-analytics-db-credentials
+aws rds describe-db-instances --db-instance-identifier visitor-analytics-db
 
 # Common causes:
 - Incorrect database endpoint

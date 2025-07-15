@@ -14,15 +14,15 @@ terraform apply -auto-approve tfplan-task
 
 # Force new deployment
 echo "🚀 Forcing new ECS deployment..."
-aws ecs update-service --cluster lamp-visitor-analytics --service lamp-visitor-analytics --force-new-deployment
+aws ecs update-service --cluster visitor-analytics --service visitor-analytics --force-new-deployment
 
 # Wait for deployment
 echo "⏳ Waiting for deployment to complete..."
-aws ecs wait services-stable --cluster lamp-visitor-analytics --services lamp-visitor-analytics
+aws ecs wait services-stable --cluster visitor-analytics --services visitor-analytics
 
 # Check service status
 echo "📊 Service Status:"
-aws ecs describe-services --cluster lamp-visitor-analytics --services lamp-visitor-analytics --query 'services[0].{runningCount:runningCount,desiredCount:desiredCount,status:status}'
+aws ecs describe-services --cluster visitor-analytics --services visitor-analytics --query 'services[0].{runningCount:runningCount,desiredCount:desiredCount,status:status}'
 
 # Get ALB DNS and test
 ALB_DNS=$(terraform output -raw primary_alb_dns)
@@ -34,7 +34,7 @@ sleep 60
 echo "🏥 Testing health endpoint..."
 curl -f http://$ALB_DNS/health.php | jq '.' || {
     echo "❌ Still failing - check logs:"
-    aws logs tail /ecs/lamp-visitor-analytics --since 5m
+    aws logs tail /ecs/visitor-analytics --since 5m
     exit 1
 }
 

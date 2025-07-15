@@ -93,7 +93,7 @@ gh run list --repo your-username/visitor-analytics
 gh run view --repo your-username/visitor-analytics
 
 # Check AWS resources
-aws ecs describe-services --cluster lamp-visitor-analytics --services lamp-visitor-analytics
+aws ecs describe-services --cluster visitor-analytics --services visitor-analytics
 ```
 
 ## Migration Checklist

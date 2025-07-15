@@ -5,7 +5,7 @@ set -e
 # Failback Script - Return from DR to Primary Region
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
-CLUSTER_NAME="lamp-visitor-analytics"
+CLUSTER_NAME="visitor-analytics"
 DR_REGION="eu-central-1"
 PRIMARY_REGION="eu-west-1"
 

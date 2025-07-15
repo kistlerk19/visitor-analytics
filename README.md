@@ -140,10 +140,10 @@ cd disaster-recovery
 terraform output
 
 # Check ECS service
-aws ecs describe-services --cluster lamp-visitor-analytics --services lamp-visitor-analytics
+aws ecs describe-services --cluster visitor-analytics --services visitor-analytics
 
 # View logs
-aws logs tail /ecs/lamp-visitor-analytics --follow
+aws logs tail /ecs/visitor-analytics --follow
 
 # Check GitHub Actions workflow status
 gh run list --repo your-username/visitor-analytics
@@ -152,7 +152,7 @@ gh run list --repo your-username/visitor-analytics
 ## 🎯 Project Structure
 
 ```
-lamp-visitor-analytics/
+visitor-analytics/
 ├── disaster-recovery/          # Main Terraform infrastructure
 │   ├── modules/               # Terraform modules
 │   │   ├── networking/        # VPC, subnets, routing

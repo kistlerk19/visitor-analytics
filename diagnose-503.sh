@@ -19,21 +19,21 @@ echo ""
 
 # 1. Check ECS Service
 echo "📊 ECS Service Status:"
-aws ecs describe-services --cluster lamp-visitor-analytics --services lamp-visitor-analytics --query 'services[0].{status:status,runningCount:runningCount,desiredCount:desiredCount,pendingCount:pendingCount}'
+aws ecs describe-services --cluster visitor-analytics --services visitor-analytics --query 'services[0].{status:status,runningCount:runningCount,desiredCount:desiredCount,pendingCount:pendingCount}'
 
 # 2. Check ECS Tasks
 echo ""
 echo "📋 ECS Tasks:"
-TASK_ARNS=$(aws ecs list-tasks --cluster lamp-visitor-analytics --service-name lamp-visitor-analytics --query 'taskArns[]' --output text)
+TASK_ARNS=$(aws ecs list-tasks --cluster visitor-analytics --service-name visitor-analytics --query 'taskArns[]' --output text)
 
 if [ -n "$TASK_ARNS" ]; then
     for task in $TASK_ARNS; do
         echo "Task: $task"
-        aws ecs describe-tasks --cluster lamp-visitor-analytics --tasks $task --query 'tasks[0].{lastStatus:lastStatus,healthStatus:healthStatus,stopCode:stopCode,stoppedReason:stoppedReason}'
+        aws ecs describe-tasks --cluster visitor-analytics --tasks $task --query 'tasks[0].{lastStatus:lastStatus,healthStatus:healthStatus,stopCode:stopCode,stoppedReason:stoppedReason}'
         
         # Check container status
         echo "Container Status:"
-        aws ecs describe-tasks --cluster lamp-visitor-analytics --tasks $task --query 'tasks[0].containers[0].{name:name,lastStatus:lastStatus,healthStatus:healthStatus,reason:reason}'
+        aws ecs describe-tasks --cluster visitor-analytics --tasks $task --query 'tasks[0].containers[0].{name:name,lastStatus:lastStatus,healthStatus:healthStatus,reason:reason}'
         echo ""
     done
 else
@@ -42,7 +42,7 @@ fi
 
 # 3. Check Target Group Health
 echo "🎯 ALB Target Health:"
-TARGET_GROUP_ARN=$(aws elbv2 describe-target-groups --names lamp-visitor-analytics --query 'TargetGroups[0].TargetGroupArn' --output text 2>/dev/null)
+TARGET_GROUP_ARN=$(aws elbv2 describe-target-groups --names visitor-analytics --query 'TargetGroups[0].TargetGroupArn' --output text 2>/dev/null)
 
 if [ -n "$TARGET_GROUP_ARN" ] && [ "$TARGET_GROUP_ARN" != "None" ]; then
     aws elbv2 describe-target-health --target-group-arn $TARGET_GROUP_ARN
@@ -53,12 +53,12 @@ fi
 # 4. Check Container Logs
 echo ""
 echo "📝 Recent Container Logs (last 20 lines):"
-aws logs tail /ecs/lamp-visitor-analytics --since 5m --max-items 20 2>/dev/null || echo "❌ No logs available"
+aws logs tail /ecs/visitor-analytics --since 5m --max-items 20 2>/dev/null || echo "❌ No logs available"
 
 # 5. Check Database Connectivity
 echo ""
 echo "🗄️ Database Status:"
-aws rds describe-db-instances --db-instance-identifier lamp-visitor-analytics-db --query 'DBInstances[0].{status:DBInstanceStatus,endpoint:Endpoint.Address}' 2>/dev/null || echo "❌ Database not found"
+aws rds describe-db-instances --db-instance-identifier visitor-analytics-db --query 'DBInstances[0].{status:DBInstanceStatus,endpoint:Endpoint.Address}' 2>/dev/null || echo "❌ Database not found"
 
 # 6. Test Direct Health Check
 echo ""

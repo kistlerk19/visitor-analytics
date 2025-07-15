@@ -86,18 +86,18 @@ NEW: lamp-alb-xxx.eu-central-1.elb.amazonaws.com
 ```bash
 # Promote read replica to primary
 aws rds promote-read-replica \
-  --db-instance-identifier lamp-visitor-analytics-db-replica \
+  --db-instance-identifier visitor-analytics-db-replica \
   --region eu-central-1
 
 # Monitor promotion progress
 aws rds describe-db-instances \
-  --db-instance-identifier lamp-visitor-analytics-db-replica \
+  --db-instance-identifier visitor-analytics-db-replica \
   --region eu-central-1 \
   --query 'DBInstances[0].DBInstanceStatus'
 
 # Wait for 'available' status
 aws rds wait db-instance-available \
-  --db-instance-identifier lamp-visitor-analytics-db-replica \
+  --db-instance-identifier visitor-analytics-db-replica \
   --region eu-central-1
 ```
 
@@ -105,22 +105,22 @@ aws rds wait db-instance-available \
 ```bash
 # Scale up ECS service in DR region
 aws ecs update-service \
-  --cluster lamp-visitor-analytics \
-  --service lamp-visitor-analytics \
+  --cluster visitor-analytics \
+  --service visitor-analytics \
   --desired-count 2 \
   --region eu-central-1
 
 # Monitor service scaling
 aws ecs describe-services \
-  --cluster lamp-visitor-analytics \
-  --services lamp-visitor-analytics \
+  --cluster visitor-analytics \
+  --services visitor-analytics \
   --region eu-central-1 \
   --query 'services[0].{desired:desiredCount,running:runningCount,pending:pendingCount}'
 
 # Wait for service stability
 aws ecs wait services-stable \
-  --cluster lamp-visitor-analytics \
-  --services lamp-visitor-analytics \
+  --cluster visitor-analytics \
+  --services visitor-analytics \
   --region eu-central-1
 ```
 
@@ -203,14 +203,14 @@ curl -f http://$PRIMARY_ALB/health.php
 ```bash
 # Create new read replica from DR (now primary) to original primary region
 aws rds create-db-instance-read-replica \
-  --db-instance-identifier lamp-visitor-analytics-db-failback \
-  --source-db-instance-identifier lamp-visitor-analytics-db-replica \
+  --db-instance-identifier visitor-analytics-db-failback \
+  --source-db-instance-identifier visitor-analytics-db-replica \
   --source-region eu-central-1 \
   --region eu-west-1
 
 # Wait for replica creation and sync
 aws rds wait db-instance-available \
-  --db-instance-identifier lamp-visitor-analytics-db-failback \
+  --db-instance-identifier visitor-analytics-db-failback \
   --region eu-west-1
 ```
 
@@ -218,22 +218,22 @@ aws rds wait db-instance-available \
 ```bash
 # Promote failback replica to primary
 aws rds promote-read-replica \
-  --db-instance-identifier lamp-visitor-analytics-db-failback \
+  --db-instance-identifier visitor-analytics-db-failback \
   --region eu-west-1
 
 # Update application to use original primary region
 # Scale up primary region ECS service
 aws ecs update-service \
-  --cluster lamp-visitor-analytics \
-  --service lamp-visitor-analytics \
+  --cluster visitor-analytics \
+  --service visitor-analytics \
   --desired-count 2 \
   --region eu-west-1
 
 # Update DNS back to primary region
 # Scale down DR region to 0 tasks
 aws ecs update-service \
-  --cluster lamp-visitor-analytics \
-  --service lamp-visitor-analytics \
+  --cluster visitor-analytics \
+  --service visitor-analytics \
   --desired-count 0 \
   --region eu-central-1
 ```
@@ -307,7 +307,7 @@ Incident Commander: [Name]
 
 # Diagnosis:
 aws rds describe-db-instances \
-  --db-instance-identifier lamp-visitor-analytics-db-replica \
+  --db-instance-identifier visitor-analytics-db-replica \
   --region eu-central-1
 
 # Solutions:
@@ -325,11 +325,11 @@ aws rds describe-db-instances \
 
 # Diagnosis:
 aws ecs describe-services \
-  --cluster lamp-visitor-analytics \
-  --services lamp-visitor-analytics \
+  --cluster visitor-analytics \
+  --services visitor-analytics \
   --region eu-central-1
 
-aws logs tail /ecs/lamp-visitor-analytics --region eu-central-1
+aws logs tail /ecs/visitor-analytics --region eu-central-1
 
 # Solutions:
 1. Check secrets manager access in DR region
@@ -347,7 +347,7 @@ aws logs tail /ecs/lamp-visitor-analytics --region eu-central-1
 # Diagnosis:
 # Check secrets in DR region
 aws secretsmanager get-secret-value \
-  --secret-id lamp-visitor-analytics-db-credentials \
+  --secret-id visitor-analytics-db-credentials \
   --region eu-central-1
 
 # Solutions:
